@@ -81,6 +81,9 @@ interface ChatTurn {
 }
 
 const CHAT_KEEP = 12;
+/** How far below the top of the room a message may reach (his desk line); matches the max-h classes on <main>. */
+const MESSAGE_TOP = 248;
+const MESSAGE_TOP_SHORT = 112;
 /** Mikko's room: one fixed height from the top, so he is always drawn at the same size. */
 const SCENE_BOX = 'absolute inset-x-0 top-0 h-[296px] short:h-[140px]';
 /** Mikko keeps looking for at least this long, even when the answer is already back. */
@@ -303,6 +306,8 @@ export default function App() {
   const dialogueAreaRef = useRef<HTMLElement>(null);
   const dialogueRef = useRef<HTMLDivElement>(null);
   const [dialogueScrolls, setDialogueScrolls] = useState(false);
+  const choicesRef = useRef<HTMLDivElement>(null);
+  const [questCompact, setQuestCompact] = useState(false);
   const progressSync = useRef<{ customerId: string | null; ready: boolean; sent: PlayerProgress | null }>({
     customerId: null,
     ready: false,
@@ -548,15 +553,25 @@ export default function App() {
     }
     const check = () => {
       const style = getComputedStyle(area);
-      const available = area.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
-      setDialogueScrolls(dialogue.offsetHeight > available + 1);
+      const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+      const available = area.clientHeight - padding;
+      setDialogueScrolls(dialogue.scrollHeight > available + 1);
+
+      // Quest answers: full rows when they fit under Mikko, tighter rows when they don't.
+      const choices = choicesRef.current;
+      const parent = area.parentElement;
+      if (!choices || !parent) return;
+      const n = choices.childElementCount;
+      const top = window.matchMedia('(max-height: 520px)').matches ? MESSAGE_TOP_SHORT : MESSAGE_TOP;
+      const forChoices = parent.clientHeight - top - padding - (dialogue.scrollHeight - choices.offsetHeight);
+      setQuestCompact(n * 44 + (n - 1) * 8 + 4 > forChoices);
     };
     check();
     const observer = new ResizeObserver(check);
     observer.observe(area);
     observer.observe(dialogue);
     return () => observer.disconnect();
-  }, [page, customTurn, asking, ledgerReady, speechOpen]);
+  }, [page, customTurn, asking, ledgerReady, speechOpen, activeQuest?.id]);
 
   if (loadError || !userState || !progress || !ledgerReady || !customerId) {
     const bar = (w: string) => (
@@ -892,21 +907,6 @@ export default function App() {
     }
   };
 
-  const handleSkipQuest = () => {
-    if (!activeQuest) return;
-    const tx = allTxs.find((t) => t.id === activeQuest.txId);
-    if (!tx) return;
-    const skipped = memoryFromQuest({ quest: activeQuest, tx, outcome: 'skipped' });
-    saveServerMemory(customerId, [skipped]);
-    setUserState((prev) =>
-      prev ? { ...prev, memory: rememberQuest(prev.memory ?? [], skipped) } : prev,
-    );
-    setCustomTurn({
-      mood: 'deadpan',
-      text: `Fine, I'll leave the €${activeQuest.amount.toFixed(2)} at ${skipped.merchant} alone. I won't ask about it again.`,
-    });
-  };
-
   const handleOpenOfferedChart = () => {
     if (!customTurn?.offerWhatIf) return;
     const { monthlyAmount, months, label } = customTurn.offerWhatIf;
@@ -996,7 +996,7 @@ export default function App() {
     }
   };
 
-  // Three prompts that fit the moment, shown above the Ask bar without opening the menu.
+  // Three prompts that fit the moment, first and highlighted in the quick prompts menu.
   const suggestedChips = (() => {
     const pick = (label: string) => QUICK_CHIPS.find((c) => c.label === label)!;
     const first =
@@ -1422,9 +1422,11 @@ export default function App() {
 
             <main
               ref={dialogueAreaRef}
-              className={`absolute inset-x-0 bottom-0 max-h-[calc(100%-56px)] z-20 px-3 pt-2 pb-2 flex flex-col ${dialogueScrolls ? 'overflow-y-auto' : 'overflow-hidden'}`}
+              className={`absolute inset-x-0 bottom-0 z-20 px-3 pt-2 pb-2 flex flex-col ${
+                customTurn?.chart ? 'max-h-[calc(100%-56px)]' : 'max-h-[calc(100%-248px)] short:max-h-[calc(100%-112px)]'
+              } ${dialogueScrolls ? 'overflow-y-auto' : 'overflow-hidden'}`}
             >
-              <div ref={dialogueRef} className="shrink-0 flex flex-col gap-2">
+              <div ref={dialogueRef} className="min-h-0 flex flex-col gap-2 [&>*]:shrink-0 [&>section]:shrink">
               {levelUpToast && (
                 <div
                   data-testid="level-up-banner"
@@ -1479,12 +1481,18 @@ export default function App() {
               ) : (
                 <section
                   aria-label="Mikko Dialogue"
-                  className="pixel-card p-3 space-y-2"
+                  className={`pixel-card p-3 flex flex-col gap-2 [&>*]:shrink-0 ${
+                    !customTurn && activeQuest ? 'min-h-0 [&>[data-testid=suspicion-quest]]:shrink' : ''
+                  }`}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="font-num font-bold text-xs tracking-wide">
-                      Mikko · Money Coach
-                    </div>
+                  <div className="flex items-start justify-between gap-2">
+                    <p
+                      data-testid="mentor-speech"
+                      className="text-xs leading-relaxed font-medium min-w-0"
+                    >
+                      <strong className="font-num">Mikko:</strong>{' '}
+                      {asking ? 'Grabbing my notes… checking your numbers.' : activeSpeech}
+                    </p>
                     <button
                       type="button"
                       onClick={() => setSpeechOpen(false)}
@@ -1494,13 +1502,6 @@ export default function App() {
                       <X className="w-4 h-4" />
                     </button>
                   </div>
-
-                <p
-                  data-testid="mentor-speech"
-                  className="text-xs leading-relaxed font-medium"
-                >
-                  {asking ? 'Grabbing my notes… checking your numbers.' : activeSpeech}
-                </p>
 
                 {customTurn?.retry && !asking && (
                   <button
@@ -1567,33 +1568,32 @@ export default function App() {
                 )}
 
                 {!customTurn && activeQuest && (
-                  <div className="space-y-2" data-testid="suspicion-quest">
-                    {activeQuest.choices.map((ch) => (
-                      <button
-                        key={ch.id}
-                        type="button"
-                        onClick={() => handleAnswerQuest(ch.id)}
-                        className="w-full min-h-[44px] px-3 py-2 text-left text-xs font-semibold pixel-btn flex items-center justify-between gap-2 cursor-pointer"
-                        style={{
-                          backgroundColor: 'var(--app-surface-muted)',
-                          color: 'var(--app-text)',
-                        }}
-                      >
-                        <span>{ch.label}</span>
-                        <span className="font-num text-xs text-[var(--app-text-muted)] shrink-0">
-                          {ch.xp > 0 ? `+${ch.xp} XP` : 'Claim'}
-                        </span>
-                      </button>
-                    ))}
-                    <div className="flex justify-end">
-                      <button
-                        type="button"
-                        data-testid="quest-skip"
-                        onClick={handleSkipQuest}
-                        className="min-h-[44px] px-3 text-xs font-semibold underline underline-offset-2 cursor-pointer text-[var(--app-text-muted)] active:text-[var(--app-text)]"
-                      >
-                        Not now, don't ask again
-                      </button>
+                  <div data-testid="suspicion-quest" className="min-h-0 flex flex-col">
+                    <div
+                      ref={choicesRef}
+                      className={`min-h-0 overflow-y-auto overscroll-contain pr-1 pb-1 ${questCompact ? 'space-y-1' : 'space-y-2'}`}
+                      data-testid="quest-choices"
+                      data-compact={questCompact ? 'true' : 'false'}
+                    >
+                      {activeQuest.choices.map((ch) => (
+                        <button
+                          key={ch.id}
+                          type="button"
+                          onClick={() => handleAnswerQuest(ch.id)}
+                          className={`w-full px-3 text-left text-xs font-semibold pixel-btn flex items-center justify-between gap-2 cursor-pointer ${
+                            questCompact ? 'min-h-[30px] py-1' : 'min-h-[44px] py-2'
+                          }`}
+                          style={{
+                            backgroundColor: 'var(--app-surface-muted)',
+                            color: 'var(--app-text)',
+                          }}
+                        >
+                          <span>{ch.label}</span>
+                          <span className="font-num text-xs text-[var(--app-text-muted)] shrink-0">
+                            {ch.xp > 0 ? `+${ch.xp} XP` : 'Claim'}
+                          </span>
+                        </button>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -1630,43 +1630,30 @@ export default function App() {
                   </button>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  {QUICK_CHIPS.map((chip) => (
-                    <button
-                      key={chip.label}
-                      type="button"
-                      onClick={() => handleChip(chip)}
-                      disabled={asking}
-                      className="min-h-[44px] px-3 py-2 text-left text-xs font-semibold pixel-btn cursor-pointer truncate"
-                      style={{
-                        backgroundColor: 'var(--app-surface-muted)',
-                        color: 'var(--app-text)',
-                      }}
-                    >
-                      {chip.label}
-                    </button>
-                  ))}
+                  {[...suggestedChips, ...QUICK_CHIPS.filter((c) => !suggestedChips.includes(c))].map((chip) => {
+                    const suggested = suggestedChips.includes(chip);
+                    return (
+                      <button
+                        key={chip.label}
+                        type="button"
+                        onClick={() => handleChip(chip)}
+                        disabled={asking}
+                        data-suggested={suggested ? 'true' : undefined}
+                        className="min-h-[44px] px-3 py-2 text-left text-xs font-semibold pixel-btn cursor-pointer truncate"
+                        style={{
+                          backgroundColor: suggested ? 'var(--app-surface)' : 'var(--app-surface-muted)',
+                          borderColor: suggested ? 'var(--app-accent)' : undefined,
+                          color: 'var(--app-text)',
+                        }}
+                      >
+                        {chip.label}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
 
-            <div
-              data-testid="suggested-chips"
-              className="flex gap-2 mb-2 overflow-x-auto short:hidden"
-              aria-label="Suggested questions"
-            >
-              {suggestedChips.map((chip) => (
-                <button
-                  key={chip.label}
-                  type="button"
-                  onClick={() => handleChip(chip)}
-                  disabled={asking}
-                  className="min-h-[44px] px-3 text-xs font-semibold pixel-btn cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-50"
-                  style={{ backgroundColor: 'var(--app-surface-muted)', color: 'var(--app-text)' }}
-                >
-                  {chip.label}
-                </button>
-              ))}
-            </div>
             <form
               onSubmit={(e) => {
                 e.preventDefault();

@@ -58,7 +58,7 @@ npm run fetch:benchmarks # refresh the Statistics Finland row in Postgres
 
 ### Mikko's memory
 
-When Mikko asks about an expense, what the customer does is saved: the answer they picked and the basket it went into, or that they skipped it. He never asks about that expense again, and chat is told what was already settled. It lives in a `mikko_memory` table (one row per customer and question).
+When Mikko asks about an expense, what the customer does is saved: the answer they picked and the basket it went into. He never asks about that expense again, and chat is told what was already settled. It lives in a `mikko_memory` table (one row per customer and question).
 
 ### Budgets
 

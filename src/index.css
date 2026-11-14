@@ -70,6 +70,15 @@
     --pixel-shadow: 3px 3px 0px rgba(0, 0, 0, 0.55);
   }
 
+  /* The app is one screen: the page itself never scrolls or bounces, only panels inside it do. */
+  html,
+  body,
+  #root {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
   body {
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
     background-color: var(--app-bg);
