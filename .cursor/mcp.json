@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "aiven": {
+      "type": "http",
+      "url": "https://mcp.aiven.live/mcp",
+      "allow_secrets": true
+    }
+  }
+}

@@ -1,5 +1,5 @@
-# Large data files (too big for GitHub, >100 MB)
-data/tx_junction_transactions.csv
-
 # Secrets
 .env
+
+node_modules/
+dist/

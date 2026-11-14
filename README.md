@@ -1,98 +1,49 @@
-# PersonalEconomicTrainer
+# Personal Economic Trainer
 
-Chat with your own money: a personal finance trainer built on synthetic
-S-Bank-style transaction data, in the spirit of MyData.
+A pixel-art money coach in a phone frame, built in the spirit of S-mobiili. Mikko looks at one customer's own transactions, sorts the month into three baskets, and answers questions in chat. Gemini writes the replies. The euros come from Postgres.
 
-- **Ask anything** in the chat ("How much did I spend on taxis last month?",
-  "What kind of spender am I?", "What is safe for me to spend this week?",
-  "How much could I save if I reduced dining out by 20%?"). Gemini answers by
-  calling tools that compute every number from your own transactions, and can
-  draw charts in the chat or point the dashboard at the right month.
-- **The baskets** frame every answer: mandatory & regular, mandatory &
-  irregular, everyday spending that slips through your fingers, and nice-to-haves
-  you could live without if money got tight. "Where it really goes" shows the
-  small habits behind the third basket and what they cost per year.
-- **Money buddy:** an avatar whose mood reflects your decisions each month.
-  Happy when you live within your means, mild when you could do better (spent
-  more than you earned, everyday habits jumped, thin buffer), angry when you buy
-  things you can't afford (e.g. takeaway that leaves less than the rent still
-  due before payday). Comes with a 0-100 score, ready for gamification.
-- **Emergency fund:** progress towards keeping 3 months of money going out on
-  the account (3 months of pay shown as an alternative). Reaching it makes the
-  buddy happier; having less than a month is a gentle nudge.
-- **Your data, your rules:** move any category or merchant type to another
-  basket, see exactly what the data contains, and download it as JSON or CSV.
-- **Open-data benchmarks** from Statistics Finland: spending per category vs.
-  people your age (Household Budget Survey 2022), price-adjusted with the
-  consumer price index.
+## What it does
+
+- **Three baskets** for the latest month: mandatory and regular (rent, bills, groceries, commuting), mandatory and irregular (health, home and tech), and slips (the small habits and nice-to-haves).
+- **Honesty checks.** Mikko flags a repeating lifestyle or entertainment charge, a late-night taxi or meal, or a large home-and-tech purchase. Naming it honestly earns XP and coins. Calling a middle-of-the-night taxi "rent" does not.
+- **Locker.** Coins buy mentor styles, app themes, and S-Bank card skins. Level gates apply. That progress stays in the browser.
+- **Ask Mikko.** Chat can cover a category or merchant type (taxis, restaurants, groceries, and the rest), what is safe to spend this week, a comparison with Statistics Finland for the customer's age, and a what-if that redirects a monthly amount into cash, an S-savings account, a global index fund, or a volatile Nokia replay.
+
+The picker loads three demo customers already stored in Postgres: `CUST01957` and `CUST02663` (age 40) and `CUST02528` (age 21).
 
 ## Run it
 
-Requires Node.js 20.12 or newer. There are no npm dependencies.
+Node.js 20.12 or newer.
 
-1. Put the CSV files in `data/` (the large `tx_junction_transactions.csv` is not in git).
-2. Copy `.env.example` to `.env` and add your Gemini API key.
-3. Start the server and open http://localhost:3000:
-   ```
-   npm start
-   ```
-
-The dashboard works without a key; the chat needs one.
-
-### Data scripts
+1. Copy `.env.example` to `.env`.
+2. Set `DATABASE_URL` to the Postgres database (customers, transactions, and a `benchmarks` row) and set `GEMINI_API_KEY`.
+3. Install and start:
 
 ```
-npm run build:customer -- CUST01957 CUST02663 CUST02528   # extract demo customers to web/data/customers/ (first = default)
-npm run fetch:benchmarks              # refresh data/benchmarks.json from Statistics Finland
+npm install
+npm start
 ```
 
-## How it fits together
+Open http://localhost:3000.
 
-| Path | What it does |
+```
+npm test                 # basket, quest, and what-if checks
+npm run fetch:benchmarks # refresh the Statistics Finland row in Postgres
+```
+
+`GEMINI_MODEL` defaults to `gemini-4-hydrogen`. `GEMINI_THINKING_LEVEL` defaults to `medium`.
+
+## How the pieces fit
+
+| Path | Role |
 |---|---|
-| `scripts/build-customer.mjs` | Extracts customers from the CSVs into `web/data/customers/` |
-| `scripts/lib.mjs` | Basket rules, merchant names and CSV reading |
-| `web/avatar.js` | The money buddy avatar (SVG, three moods) |
-| `scripts/fetch-benchmarks.mjs` | Downloads benchmark tables from the Statistics Finland PxWeb API |
-| `web/finance.js` | Shared calculation engine (dashboard and chat use the same numbers) |
-| `web/app.js`, `web/chat.js` | Dashboard and chat panel |
-| `server/server.mjs` | Serves the app, runs the Gemini tool-calling loop |
-| `server/tools.mjs` | Tool definitions: query, profile, safe-to-spend, what-if, benchmark, charts, dashboard control |
+| `src/` | The phone UI: Mikko's room, baskets, dialogue, charts, locker |
+| `src/game/engine.ts` | Baskets, quests, safe-to-spend, and the what-if simulation |
+| `server/db.mjs` | Customers, transactions, and benchmarks from Postgres |
+| `server/chat.ts` | Gemini tool loop. Tools compute the numbers; `speak` is the reply |
+| `server/server.ts` | API and the Vite dev server on port 3000 |
+| `scripts/fetch-benchmarks.mjs` | Household Budget Survey 2022 and the consumer price index, from Statistics Finland |
 
-## The baskets
+Chat uses the Gemini Interactions API with `store: false`, so the conversation is not kept on Google's side after the answer. The server sends the recent turns again on the next question. Your question and the tool summaries (totals, not the full ledger) are what get sent to the model.
 
-Two baskets you must pay, two you choose:
-
-| Basket | What goes in it by default |
-|---|---|
-| Mandatory & regular | Housing, utilities, groceries, commuting and fuel |
-| Mandatory & irregular | Health, home & tech (repairs, appliances, furniture) |
-| Slips through your fingers | Small habitual purchases up to 40 €: cafés, quick lunches, bars, kiosk snacks, taxis, parking |
-| Nice to have | Things you could live without if money got tight: travel, hobbies, events, shopping, meals out and taxis over 40 € |
-
-The first three are the brief's baskets; *Nice to have* keeps big deliberate
-purchases from hiding the small leaks. The 40 € limit is `SMALL_PURCHASE_EUR` in
-`scripts/lib.mjs`. Users can change any rule in the **My data** section.
-
-## Privacy
-
-When you use the chat, your question and the summaries the model asks for
-(totals, averages, a few example transactions) are sent to Google Gemini. The
-full transaction list stays on the local server.
-
-The chat uses the Gemini Interactions API with `store: false`, so Google does
-not keep the conversation after answering (by default it would store it for
-1–55 days). The server resends the conversation on each turn instead. Model:
-`gemini-4-hydrogen` with `thinking_level: medium`; both can be changed in `.env`.
-
-Benchmark data: Statistics Finland, CC BY 4.0.
-
-## Demo customers
-
-| Customer | Age | Typical buddy mood |
-|---|---|---|
-| CUST01957 | 40 | Mostly happy: high savings, few small leaks |
-| CUST02663 | 40 | Mild: big everyday spending, some months over budget |
-| CUST02528 | 21 | Often angry: treats bought while rent is still due, account in the red |
-
-Switch between them with the picker in the top bar (or `?customer=ID`).
+Benchmark source: Statistics Finland, CC BY 4.0. Survey figures are per consumption unit per month and are lifted to recent prices with the consumer price index.

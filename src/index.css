@@ -1,0 +1,118 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --app-bg: #f3f6f4;
+    --app-surface: #ffffff;
+    --app-surface-muted: #e9efeb;
+    --app-border: #d2ded6;
+    --app-text: #112218;
+    --app-text-muted: #4b6355;
+    --app-accent: #007a45;
+    --app-accent-bright: #00a859;
+    --app-accent-fg: #ffffff;
+    --app-warning: #c25e00;
+    --app-danger: #b91c1c;
+    --pixel-shadow: 3px 3px 0px rgba(17, 34, 24, 0.16);
+  }
+
+  [data-theme="gameboy"] {
+    --app-bg: #cadc9f;
+    --app-surface: #e0f0b6;
+    --app-surface-muted: #9bbc0f;
+    --app-border: #306230;
+    --app-text: #0f380f;
+    --app-text-muted: #306230;
+    --app-accent: #0f380f;
+    --app-accent-bright: #306230;
+    --app-accent-fg: #cadc9f;
+    --app-warning: #5c4b00;
+    --app-danger: #6e1414;
+    --pixel-shadow: 3px 3px 0px #0f380f;
+  }
+
+  [data-theme="nokia3310"] {
+    --app-bg: #88a483;
+    --app-surface: #9db897;
+    --app-surface-muted: #789373;
+    --app-border: #202d1e;
+    --app-text: #152113;
+    --app-text-muted: #293b26;
+    --app-accent: #152113;
+    --app-accent-bright: #293b26;
+    --app-accent-fg: #9db897;
+    --app-warning: #152113;
+    --app-danger: #152113;
+    --pixel-shadow: 3px 3px 0px #152113;
+  }
+
+  [data-theme="midnight"] {
+    --app-bg: #0f1714;
+    --app-surface: #17231e;
+    --app-surface-muted: #20312a;
+    --app-border: #2d463c;
+    --app-text: #eaf3ee;
+    --app-text-muted: #9db7aa;
+    --app-accent: #00a859;
+    --app-accent-bright: #22c574;
+    --app-accent-fg: #071910;
+    --app-warning: #f59e0b;
+    --app-danger: #ef4444;
+    --pixel-shadow: 3px 3px 0px rgba(0, 0, 0, 0.55);
+  }
+
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    background-color: var(--app-bg);
+    color: var(--app-text);
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+}
+
+.font-pixel {
+  font-family: 'Silkscreen', monospace;
+}
+
+.font-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.pixel-card {
+  background-color: var(--app-surface);
+  border: 2px solid var(--app-border);
+  box-shadow: var(--pixel-shadow);
+}
+
+.pixel-btn {
+  border: 2px solid var(--app-border);
+  box-shadow: 2px 2px 0px var(--app-border);
+  transition: transform 80ms ease, box-shadow 80ms ease;
+}
+
+.pixel-btn:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 0px 0px 0px var(--app-border);
+}
+
+.pixel-crisp {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pixel-animate {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+@keyframes floatBob {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-2px); }
+}
+
+.animate-pixel-bob {
+  animation: floatBob 1.8s steps(2, end) infinite;
+}

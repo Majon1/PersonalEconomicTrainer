@@ -1,5 +1,5 @@
 // Download open benchmark data from Statistics Finland (PxWeb API, CC BY 4.0)
-// and write data/benchmarks.json.
+// and store the result in the benchmarks table.
 //
 //  - Household budget survey 2022, table 14q4: consumption expenditure per
 //    consumption unit per month, by age of the household reference person.
@@ -8,12 +8,8 @@
 //
 // Usage:  node scripts/fetch-benchmarks.mjs
 
-import { writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { createPool, saveBenchmarks } from "../server/db.mjs";
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const OUT = join(ROOT, "data", "benchmarks.json");
 const API = "https://pxdata.stat.fi/PxWeb/api/v1/en/StatFin";
 
 // Our transaction categories -> COICOP 2018 codes used in the survey.
@@ -118,8 +114,10 @@ async function main() {
       monthly: cpiMonthly,
     },
   };
-  writeFileSync(OUT, JSON.stringify(out, null, 2) + "\n");
-  console.log(`Wrote ${OUT}`);
+  const pool = createPool();
+  await saveBenchmarks(pool, out);
+  await pool.end();
+  console.log("Updated benchmarks in Postgres");
   console.log("35-44:", byAge["35-44"]);
   console.log("CPI 2022 avg", out.consumerPriceIndex.average2022, "latest", months.at(-1), cpiMonthly[`${months.at(-1).slice(0, 4)}-${months.at(-1).slice(5)}`]);
 }
