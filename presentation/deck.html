@@ -117,7 +117,7 @@
       <div class="col">
         <div class="kicker logo-kicker">Junction 2026 challenge by <img src="s_pankki.webp" alt="S-Pankki" style="height:34px" /></div>
         <h1>Personal<br />Economic<br />Trainer</h1>
-        <p class="lead">A pixel art money coach where Mikko watches your S-mobiili spending, compares you to the average Finn, and turns better money habits into a game.</p>
+        <p class="lead">A pixel art money coach named Mikko that watches your S-mobiili spending, compares you to the average Finn, and turns better money habits into a game.</p>
         <div class="try">
           <div class="qr"><img src="qr-app.svg" alt="QR code to the app" /></div>
           <div><div class="url">grossly-powerful-buck.eur-1.aiven.app</div><div class="hint">Scan to try it on your phone</div></div>
@@ -190,7 +190,7 @@
       <div class="col">
         <div class="kicker">You vs Finland</div>
         <h2>Is my spending normal?</h2>
-        <p class="lead">Mikko compares each category with other Finns your age, using the Statistics Finland household budget survey, adjusted to today's prices with the consumer price index.</p>
+        <p class="lead">Mikko compares each category with other Finns your age, using data from Statistics Finland.</p>
         <ul class="ticks">
           <li>The biggest gaps go up on Mikko's wall</li>
           <li>Tap a category to see the details and the full table</li>
@@ -210,7 +210,7 @@
         <p class="lead">"€48.84 to Events, three charges in three months. What is it actually?" Naming it honestly sorts it into the right basket and earns XP.</p>
         <ul class="ticks">
           <li>Mikko remembers the answer and does not ask about that payment again</li>
-          <li>He flags repeating subscriptions, late night taxis and big purchases</li>
+          <li>He flags repeating subscriptions and other irregular behaviour, and may ask more about them</li>
         </ul>
       </div>
       <div class="phone"><img src="shot-quest.png" alt="Mikko asking about a payment" /></div>
@@ -222,8 +222,8 @@
     <div class="kicker">Planning</div>
     <h2>Plan ahead with your own numbers</h2>
     <div class="grid2">
-      <div class="card"><h3>What if?</h3><p>"What if I put €100 a month into an index fund?" Mikko replays it on real past prices: cash, S-savings account, a global index fund or a volatile Nokia replay.</p></div>
-      <div class="card"><h3>Safe to spend</h3><p>What is left this week after the rent and bills still due before payday.</p></div>
+      <div class="card"><h3>What if?</h3><p>"What if I put €100 a month into an index fund?" Mikko replays it on real past prices to show what you could have earned.</p></div>
+      <div class="card"><h3>Safe to spend</h3><p>What is left this week after rent and bills are paid before payday.</p></div>
       <div class="card"><h3>Budget</h3><p>Limits for slips and nice to haves, suggested from your last 3 months minus 10%, with a warning before a limit runs out.</p></div>
       <div class="card"><h3>Rainy day fund</h3><p>Progress towards 3 months of costs in cash, for surprises like a broken washing machine.</p></div>
     </div>
@@ -237,7 +237,7 @@
     <div class="grid3">
       <div class="card"><h3>XP and levels</h3><p>Answering Mikko's questions and checking your spending fills the XP bar.</p></div>
       <div class="card"><h3>Locker</h3><p>Coins unlock Mikko outfits, app themes and S-Bank card skins.</p></div>
-      <div class="card"><h3>Money mood</h3><p>Mikko is impressed when you live within your means, suspicious when you could do better, and angry when a splurge eats the rent money.</p></div>
+      <div class="card"><h3>Money mood</h3><p>Mikko is impressed when you live within your means, suspicious when you could do better, and angry when you waste money on unnecessary stuff.</p></div>
     </div>
     <p class="lead">Progress is saved to your account, so the same level follows you from phone to laptop.</p>
     <div class="floor"></div>
@@ -267,29 +267,15 @@
     <div class="kicker">Trust</div>
     <h2>Correct numbers, private data</h2>
     <ul class="ticks" style="margin-top:40px">
-      <li>Every number comes from the engine and the database, and the model only puts those numbers into words.</li>
-      <li>Gemini gets totals, not the full transaction list.</li>
+      <li>Gemini only works with totals from the engine and database, not the full transaction list.</li>
       <li>Chat runs with <span class="num">store: false</span>, so Google does not keep the conversation.</li>
       <li>Hosted in the EU, in Frankfurt, with verified TLS to the database.</li>
-      <li>Users explore their own data freely instead of fixed charts, in the spirit of MyData.</li>
+      <li>Users explore their own data freely instead of fixed charts.</li>
     </ul>
     <div class="floor"></div>
   </section>
 
-  <!-- 11. Fit -->
-  <section class="slide">
-    <div class="kicker">Why it fits S-Bank</div>
-    <h2>S-Bank's judging criteria</h2>
-    <div class="crit">
-      <div>Financial literacy</div><div>Four baskets, quests and plain explanations teach where money goes</div>
-      <div>Original AI</div><div>A decision model routes questions, and the engine keeps the numbers exact</div>
-      <div>Mobile experience</div><div>One screen, no scrolling, 44px buttons, from small Androids to the iPhone 16 Pro Max</div>
-      <div>Feasibility</div><div>Running on Aiven now, on a synthetic dataset modelled on S-Bank data</div>
-      <div>S-mobiili integration</div><div>A web app that can be embedded in S-mobiili, with S-Bank card skins in the Locker</div>
-    </div>
-  </section>
-
-  <!-- 12. Try it -->
+  <!-- 11. Try it -->
   <section class="slide title-slide">
     <div class="row">
       <div class="col">
