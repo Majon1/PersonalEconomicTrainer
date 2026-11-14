@@ -5,6 +5,7 @@ import { FinanceChart } from './components/FinanceChart';
 import { LockerView } from './components/LockerView';
 import { BudgetView } from './components/BudgetView';
 import { FinlandWall, pctVsFinland } from './components/FinlandWall';
+import { BottomNav, HomePage, MoneyInPage, SpendingPage, type PageKey } from './components/Pages';
 import { PixelMentorScene } from './components/PixelMentorScene';
 import {
   computeBaskets,
@@ -112,13 +113,13 @@ function loadState(customerId: string): SavedUserState {
 }
 
 const QUICK_CHIPS = [
-  { label: 'Taxis?', query: 'How much did I spend on taxis last month?' },
-  { label: 'Safe/wk?', query: 'What is safe for me to spend this week?' },
   { label: 'How am I doing?', query: 'How am I doing this month? Why are you in that mood?' },
+  { label: 'Safe/wk?', query: 'What is safe for me to spend this week?' },
   { label: 'Can I buy it?', query: '' },
+  { label: 'Junk food?', query: 'How much did I spend on junk food this month (cafés, fast food, kiosk snacks)?' },
+  { label: 'Fun?', query: 'How much did I spend on fun this month (events, hobbies, nights out)?' },
   { label: 'Fund?', query: 'Do I have enough of an emergency fund?' },
   { label: 'Peers?', query: 'Compare me to Finnish peers' },
-  { label: 'Netflix?', query: 'If Netflix went into an index fund' },
 ];
 
 // Status colours (good / warning / critical), always paired with an icon and label.
@@ -137,6 +138,7 @@ export default function App() {
   const [userState, setUserState] = useState<SavedUserState | null>(null);
   const [lockerOpen, setLockerOpen] = useState(false);
   const [budgetOpen, setBudgetOpen] = useState(false);
+  const [page, setPage] = useState<PageKey>('mikko');
   const [muted, setMuted] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [lastShiftedBasket, setLastShiftedBasket] = useState<BasketKey | null>(
@@ -328,6 +330,16 @@ export default function App() {
       </div>
     );
   }
+
+  // Balance after the latest transaction, shown at the top of every page.
+  const latestTx = visibleTxs.reduce<Transaction | null>(
+    (a, t) => (!a || `${t.date} ${t.time}` > `${a.date} ${a.time}` ? t : a),
+    null,
+  );
+  const accountBalance = latestTx?.balanceAfter ?? 0;
+  const accountAsOf = latestTx
+    ? new Date(`${latestTx.date}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
+    : '';
 
   const activeMood: MentorMood = customTurn
     ? customTurn.chart
@@ -779,6 +791,28 @@ export default function App() {
             </div>
           </header>
 
+          {/* What's on the account right now, on every page */}
+          <div
+            className="px-3 py-1 flex items-baseline justify-between gap-2 border-b-2 shrink-0"
+            style={{ backgroundColor: 'var(--app-surface)', borderColor: 'var(--app-border)' }}
+            data-testid="account-balance"
+          >
+            <span className="text-[11px] font-semibold text-[var(--app-text-muted)]">
+              On your account · {accountAsOf}
+            </span>
+            <span className="font-num text-base font-bold" style={{ color: accountBalance < 0 ? 'var(--app-danger)' : 'var(--app-text)' }}>
+              {accountBalance < 0 ? '−' : ''}€{Math.abs(accountBalance).toLocaleString('en-IE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+          </div>
+
+          {page !== 'mikko' ? (
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              {page === 'spending' && <SpendingPage transactions={visibleTxs} overrides={userState.overrides} />}
+              {page === 'money_in' && <MoneyInPage transactions={visibleTxs} />}
+              {page === 'home' && <HomePage customerId={customerId} transactions={visibleTxs} />}
+            </div>
+          ) : (
+          <>
           <BasketsMeter
             baskets={baskets}
             lastShiftedBasket={lastShiftedBasket}
@@ -1107,7 +1141,6 @@ export default function App() {
             style={{
               backgroundColor: 'var(--app-surface)',
               borderColor: 'var(--app-border)',
-              paddingBottom: 'calc(0.625rem + env(safe-area-inset-bottom))',
             }}
           >
             <div className="flex gap-1.5 overflow-x-auto short:hidden">
@@ -1166,6 +1199,16 @@ export default function App() {
               </button>
             </form>
           </footer>
+          </>
+          )}
+
+          <BottomNav
+            page={page}
+            onChange={(p) => {
+              soundFx.playClick();
+              setPage(p);
+            }}
+          />
         </div>
 
         {/* Slide-Over Locker Drawer */}

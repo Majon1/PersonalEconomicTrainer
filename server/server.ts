@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { createServer as createViteServer } from "vite";
 import { answerWithGemini } from "./chat.ts";
 import { buildFinlandBoard } from "./compare.ts";
-import { createPool, loadBenchmarks, loadCustomer, loadCustomerIndex } from "./db.mjs";
+import { createPool, loadBenchmarks, loadCustomer, loadCustomerIndex, loadMortgage, loadMortgageStats } from "./db.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 if (existsSync(join(ROOT, ".env"))) process.loadEnvFile(join(ROOT, ".env"));
@@ -48,6 +48,18 @@ app.get("/api/customers/:id", async (req, res) => {
   const data = await getCustomer(req.params.id);
   if (!data) return res.status(404).json({ error: "Customer not found" });
   res.json(data);
+});
+
+// Home page: the customer's own mortgage application (or null) and what all
+// applications in the data looked like.
+app.get("/api/customers/:id/mortgage", async (req, res) => {
+  try {
+    const [application, stats] = await Promise.all([loadMortgage(pool, req.params.id), loadMortgageStats(pool)]);
+    res.json({ application, stats });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Could not load mortgage data." });
+  }
 });
 
 // "You vs Finland" board, computed directly (no AI needed).

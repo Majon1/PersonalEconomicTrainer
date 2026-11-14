@@ -139,3 +139,85 @@ export async function loadCustomer(pool, id) {
     transactions: tx.rows.map((row) => gameTransaction(row, id)),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Mortgages: the customer's own application (if any) and what all 200
+// applications in the data looked like.
+// ---------------------------------------------------------------------------
+
+const MONTHS = { JAN: "01", FEB: "02", MAR: "03", APR: "04", MAY: "05", JUN: "06", JUL: "07", AUG: "08", SEP: "09", OCT: "10", NOV: "11", DEC: "12" };
+
+/** "13JUL26:07:49:55" -> "2026-07-13" */
+function eventDate(stamp) {
+  const m = /^(\d{2})([A-Z]{3})(\d{2})/.exec(String(stamp || ""));
+  return m ? `20${m[3]}-${MONTHS[m[2]] || "01"}-${m[1]}` : null;
+}
+
+export async function loadMortgage(pool, customerId) {
+  const app = await pool.query("SELECT * FROM mortgage_applications WHERE customer_id = $1", [customerId]);
+  const a = app.rows[0];
+  if (!a) return null;
+  const ev = await pool.query(
+    `SELECT event_timestamp, event_type, property_type, property_price_estimate, expense_type, expense_amount, decision, rejection_reason
+     FROM mortgage_events WHERE mortgage_customer_id = $1`,
+    [a.mortgage_customer_id],
+  );
+  const events = ev.rows
+    .map((e) => ({ ...e, date: eventDate(e.event_timestamp) }))
+    .sort((x, y) => String(x.date).localeCompare(String(y.date)));
+  const num = (v) => (v == null ? null : Number(v));
+  return {
+    id: a.mortgage_customer_id,
+    decision: a.final_decision,
+    rejectionReason: a.rejection_reason || null,
+    propertyPrice: num(a.final_property_price_eur),
+    loan: num(a.final_requested_loan_eur),
+    equity: num(a.final_equity_amount_eur),
+    collateralValue: num(a.final_collateral_value_eur),
+    requiredMonthlyIncome: Math.round(num(a.required_monthly_income_eur) * 100) / 100,
+    loanToValue: Math.round(num(a.final_loan_to_value) * 10000) / 10000,
+    startedOn: events[0]?.date ?? null,
+    decidedOn: [...events].reverse().find((e) => e.event_type === "loan_decision")?.date ?? null,
+    propertiesViewed: new Set(events.filter((e) => e.event_type === "property_added").map((e) => e.property_price_estimate)).size,
+    propertyTypes: [...new Set(events.map((e) => e.property_type).filter(Boolean))],
+    contacts: events.filter((e) => e.event_type === "customer_contact").length,
+    steps: events.length,
+    expenses: events
+      .filter((e) => e.expense_type)
+      .map((e) => ({ date: e.date, type: e.expense_type, amount: num(e.expense_amount) })),
+  };
+}
+
+let mortgageStats = null;
+export async function loadMortgageStats(pool) {
+  if (mortgageStats) return mortgageStats;
+  const { rows } = await pool.query(
+    `SELECT count(*)::int AS applications,
+            count(*) FILTER (WHERE final_decision = 'approved')::int AS approved,
+            percentile_cont(0.5) WITHIN GROUP (ORDER BY final_property_price_eur::numeric)::float AS median_price,
+            percentile_cont(0.5) WITHIN GROUP (ORDER BY final_requested_loan_eur::numeric)::float AS median_loan,
+            percentile_cont(0.5) WITHIN GROUP (ORDER BY final_equity_amount_eur::numeric)::float AS median_equity,
+            percentile_cont(0.5) WITHIN GROUP (ORDER BY required_monthly_income_eur::numeric)::float AS median_required_income
+     FROM mortgage_applications`,
+  );
+  const reasons = await pool.query(
+    `SELECT rejection_reason AS reason, count(*)::int AS n FROM mortgage_applications
+     WHERE rejection_reason IS NOT NULL AND rejection_reason <> '' GROUP BY 1 ORDER BY 2 DESC`,
+  );
+  const costs = await pool.query(
+    `SELECT expense_type AS type, count(*)::int AS n, avg(expense_amount::numeric)::float AS average
+     FROM mortgage_events WHERE expense_type IS NOT NULL AND expense_type <> '' GROUP BY 1 ORDER BY 3 DESC`,
+  );
+  const r = rows[0];
+  mortgageStats = {
+    applications: r.applications,
+    approved: r.approved,
+    medianPrice: Math.round(r.median_price),
+    medianLoan: Math.round(r.median_loan),
+    medianEquity: Math.round(r.median_equity),
+    medianRequiredIncome: Math.round(r.median_required_income),
+    rejectionReasons: reasons.rows,
+    typicalCosts: costs.rows.map((c) => ({ type: c.type, count: c.n, average: Math.round(c.average) })),
+  };
+  return mortgageStats;
+}

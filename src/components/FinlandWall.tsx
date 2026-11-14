@@ -41,7 +41,7 @@ export function FinlandWall({ board, picked, onPick, onClose }: FinlandWallProps
         onClick={() => onPick(row.category)}
         aria-pressed={isPicked}
         aria-label={`${row.category}: ${pct > 0 ? '+' : ''}${pct}% vs Finland. You €${row.yours.toFixed(0)}, Finland €${row.finland.toFixed(0)}. Tap for details.`}
-        className="w-full min-h-[30px] px-1.5 py-1 flex items-center justify-between gap-1 text-left cursor-pointer pixel-btn"
+        className="w-full min-h-[22px] px-1 py-0.5 flex items-center justify-between gap-1 text-left cursor-pointer pixel-btn"
         style={{
           backgroundColor: 'var(--app-surface)',
           borderColor: isPicked ? tone.color : 'var(--app-border)',
@@ -49,8 +49,8 @@ export function FinlandWall({ board, picked, onPick, onClose }: FinlandWallProps
           outlineOffset: '-2px',
         }}
       >
-        <span className="text-[11px] font-semibold truncate min-w-0">{row.category}</span>
-        <span className="font-num text-[11px] font-bold shrink-0" style={{ color: tone.color }}>
+        <span className="text-[9.5px] font-semibold truncate min-w-0">{row.category}</span>
+        <span className="font-num text-[9.5px] font-bold shrink-0" style={{ color: tone.color }}>
           {tone.arrow}
           {pct > 0 ? '+' : pct < 0 ? '−' : ''}
           {Math.abs(pct)}%
@@ -84,7 +84,7 @@ export function FinlandWall({ board, picked, onPick, onClose }: FinlandWallProps
       {columns.map((rows, i) => (
         <div
           key={i}
-          className={`absolute top-9 bottom-[17%] w-[34%] max-w-[170px] flex flex-col justify-center gap-1 overflow-y-auto pointer-events-auto ${
+          className={`absolute top-8 bottom-[17%] w-[29%] max-w-[130px] flex flex-col justify-center gap-0.5 overflow-y-auto pointer-events-auto ${
             i === 0 ? 'left-1.5' : 'right-1.5'
           }`}
         >

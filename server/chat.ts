@@ -75,13 +75,14 @@ const TOOLS = [
   {
     type: "function" as const,
     name: "spend_series",
-    description: "Monthly spend for one focus, plus the latest month's total, count, and average. Use for taxis, restaurants, groceries, transport, housing, utilities, health, entertainment, lifestyle, travel, home tech, slips, or nice_to_have.",
+    description: "Monthly spend for one focus, plus the latest month's total, count, and average. Use for junk food, fun, taxis, restaurants, groceries, transport, housing, utilities, health, entertainment, lifestyle, travel, home tech, slips, or nice_to_have.",
     parameters: {
       type: "object",
       properties: {
         focus: {
           type: "string",
-          enum: ["taxi", "restaurants", "groceries", "transport", "housing", "utilities", "health", "entertainment", "lifestyle", "travel", "home_tech", "slips", "nice_to_have"],
+          enum: ["taxi", "restaurants", "junk_food", "fun", "groceries", "transport", "housing", "utilities", "health", "entertainment", "lifestyle", "travel", "home_tech", "slips", "nice_to_have"],
+          description: "junk_food = cafés, fast food and kiosk snacks; fun = events, hobbies, cinema and bars.",
         },
       },
       required: ["focus"],
@@ -158,6 +159,8 @@ function matchesFocus(tx: Transaction, focus: string, overrides: LabelOverride[]
     case "utilities": return tx.category === "Utilities";
     case "health": return tx.category === "Health";
     case "entertainment": return tx.category === "Entertainment";
+    case "junk_food": return tx.mcc === "5814" || (tx.mcc === "5499" && Math.abs(tx.amount) <= 40);
+    case "fun": return tx.category === "Entertainment" || tx.mcc === "5813";
     case "lifestyle": return tx.category === "Lifestyle";
     case "travel": return tx.category === "Travel";
     case "home_tech": return tx.category === "Home & Tech";
