@@ -10,7 +10,7 @@ A pixel-art money coach built in the spirit of S-mobiili. Mikko looks at one cus
 - **Honesty checks.** Mikko flags a repeating lifestyle or entertainment charge, a late-night taxi or meal, or a large home-and-tech purchase. Naming it honestly earns XP and coins. Calling a middle-of-the-night taxi "rent" does not.
 - **Budget.** Set monthly limits for slips and nice-to-haves (plus optional per-category limits); Mikko suggests your last 3 months minus 10%. The budget bar shows what is left, Mikko warns when a limit is nearly used up, and "Can I buy it?" checks a planned purchase against the budget, the money needed for bills until payday, and the emergency fund (go / think twice / skip it). Ask in chat too: "Can I buy sneakers for €90?".
 - **You vs Finland.** Mikko offers to compare you with Statistics Finland figures for your age; yes opens a board of your average month per category against other Finns, price-adjusted.
-- **Locker.** Coins buy mentor styles, app themes, and S-Bank card skins. Level gates apply. That progress stays in the browser.
+- **Locker.** Coins buy mentor styles, app themes, and S-Pankki card skins. Level gates apply. That progress stays in the browser.
 - **Ask Mikko.** Chat can cover a category or merchant type (taxis, restaurants, groceries, and the rest), what is safe to spend this week, a comparison with Statistics Finland for the customer's age, and a what-if that redirects a monthly amount into cash, an S-savings account, a global index fund, or a volatile Nokia replay.
 
 The picker loads three demo customers already stored in Postgres: `CUST01957` and `CUST02663` (age 40) and `CUST02528` (age 21).

@@ -86,7 +86,7 @@ export function PixelCardPreview({
         shapeRendering="crispEdges"
         className="w-full h-auto block pixel-crisp"
         role="img"
-        aria-label={`Virtual S-Bank debit card with ${skin.label} skin`}
+        aria-label={`Virtual S-Pankki debit card with ${skin.label} skin`}
       >
         <rect x="0" y="0" width="64" height="40" fill={skin.bg} />
         {/* Dither pattern corner */}
@@ -113,7 +113,7 @@ export function PixelCardPreview({
         <rect x="8" y="17" width="5" height="3" fill={skin.bg} />
         <rect x="6" y="18" width="9" height="1" fill={skin.border} opacity="0.35" />
 
-        {/* S-Bank pixel emblem top-left */}
+        {/* S-Pankki pixel emblem top-left */}
         <rect x="6" y="5" width="6" height="6" fill={skin.accent} />
         <rect x="8" y="6" width="3" height="1" fill={skin.bg} />
         <rect x="7" y="7" width="2" height="1" fill={skin.bg} />

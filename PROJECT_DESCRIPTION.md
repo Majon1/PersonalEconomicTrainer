@@ -1,8 +1,8 @@
 Try it: https://grossly-powerful-buck.eur-1.aiven.app/
 
-## S-Bank challenge
+## S-Pankki challenge
 
-S-Bank asked for an AI coach that lets people talk with their own banking data. Mikko answers in plain words, from "How much did I spend on taxis?" to "What is safe to spend this week?" or "Can I buy sneakers for €90?". You ask what you want instead of reading charts the bank picked.
+S-Pankki asked for an AI coach that lets people talk with their own banking data. Mikko answers in plain words, from "How much did I spend on taxis?" to "What is safe to spend this week?" or "Can I buy sneakers for €90?". You ask what you want instead of reading charts the bank picked.
 
 - He sorts each month into four baskets: bills you must pay, surprise costs like a dentist visit, small habits like coffees that slip through your fingers, and nice extras you could live without.
 - He compares you with the average Finn your age, using Statistics Finland data adjusted for today's prices.

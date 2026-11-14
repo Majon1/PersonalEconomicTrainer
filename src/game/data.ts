@@ -158,7 +158,7 @@ export const SHOP_CATALOG: ShopItem[] = [
     slot: 'card_skin',
     value: 'classic_green',
     name: 'S-Etukortti Classic',
-    description: 'Everyday green S-Bank Visa debit.',
+    description: 'Everyday green S-Pankki Visa debit.',
     requiredLevel: 1,
     coinCost: 0,
   },
@@ -194,13 +194,13 @@ export const SHOP_CATALOG: ShopItem[] = [
     slot: 'card_skin',
     value: 'holo_prism',
     name: 'Holographic Prism',
-    description: 'Top-tier S-Bank mastery card skin.',
+    description: 'Top-tier S-Pankki mastery card skin.',
     requiredLevel: 12,
     coinCost: 220,
   },
 ];
 
-// Realistic 3-month synthetic S-Bank transaction sample (July–Sep 2026)
+// Realistic 3-month synthetic S-Pankki transaction sample (July–Sep 2026)
 export const SEED_TRANSACTIONS: Transaction[] = [
   // ================= MIKKO (Slip Spender, Helsinki) =================
   // September 2026 (Latest Calendar Month)

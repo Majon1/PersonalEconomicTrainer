@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Pixel-art money coach on synthetic S-Bank data, Postgres, and Gemini.",
+  "description": "Pixel-art money coach on synthetic S-Pankki data, Postgres, and Gemini.",
   "engines": {
     "node": ">=20.12"
   },
