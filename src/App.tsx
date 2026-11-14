@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronRight, ShieldCheck, Volume2, VolumeX } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { ChevronRight, ShieldCheck } from 'lucide-react';
 import { BasketsMeter } from './components/BasketsMeter';
 import { FinanceChart } from './components/FinanceChart';
 import { LockerView } from './components/LockerView';
@@ -22,7 +22,6 @@ import {
   simulateWhatIf,
   xpProgressInLevel,
 } from './game/engine';
-import { soundFx } from './game/sound';
 import type {
   BasketKey,
   ChartPayload,
@@ -139,7 +138,6 @@ export default function App() {
   const [lockerOpen, setLockerOpen] = useState(false);
   const [budgetOpen, setBudgetOpen] = useState(false);
   const [page, setPage] = useState<PageKey>('mikko');
-  const [muted, setMuted] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [lastShiftedBasket, setLastShiftedBasket] = useState<BasketKey | null>(
     null,
@@ -221,24 +219,6 @@ export default function App() {
       // Ignore quota issues
     }
   }, [userState, customerId]);
-
-  const toggleMute = useCallback(() => {
-    setMuted((prev) => {
-      const next = !prev;
-      soundFx.muted = next;
-      return next;
-    });
-  }, []);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement | null)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-      if (e.key === 'm' || e.key === 'M') toggleMute();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [toggleMute]);
 
   const allTxs = transactions;
   const visibleTxs = useMemo(
@@ -357,7 +337,6 @@ export default function App() {
 
   const handleSaveBudget = (next: Budget | null) => {
     const firstTime = !userState.budget && next;
-    soundFx.playHonestChime();
     setUserState((prev) => {
       if (!prev) return prev;
       const xp = prev.progress.xp + (firstTime ? 20 : 0);
@@ -376,8 +355,6 @@ export default function App() {
 
   const handleCheckPurchase = (amount: number, category: string, what: string) => {
     const v = checkPurchase({ transactions: visibleTxs, overrides: userState.overrides, budget, amount, category, what });
-    if (v.verdict === 'stop') soundFx.playBluffBuzz();
-    else soundFx.playHonestChime();
     setBudgetOpen(false);
     setCustomTurn({
       mood: v.mood,
@@ -386,7 +363,6 @@ export default function App() {
   };
 
   const handleCompareYes = async () => {
-    soundFx.playClick();
     setCustomTurn({ mood: 'deadpan', text: 'Pulling the Statistics Finland numbers…' });
     try {
       const res = await fetch(`/api/customers/${customerId}/compare`);
@@ -420,7 +396,6 @@ export default function App() {
     const board = customTurn.chart;
     const row = board.rows.find((r) => r.category === category);
     if (!row) return;
-    soundFx.playClick();
     const pct = pctVsFinland(row);
     const diff = row.yours - row.finland;
     const sign = diff >= 0 ? '+' : '−';
@@ -441,7 +416,6 @@ export default function App() {
   };
 
   const handleShowMood = () => {
-    soundFx.playClick();
     const r = moneyMood.reasons;
     const lines = [...r.bad, ...r.meh, ...r.good.slice(0, 2)].map((x) => x.charAt(0).toUpperCase() + x.slice(1));
     setCustomTurn({
@@ -451,7 +425,6 @@ export default function App() {
   };
 
   const handleShowEmergencyFund = () => {
-    soundFx.playClick();
     const ef = moneyMood.emergency;
     setCustomTurn({
       mood: 'pointing',
@@ -473,7 +446,6 @@ export default function App() {
   };
 
   const handleResetDemo = () => {
-    soundFx.playClick();
     setUserState(buildInitialState(customerId));
     setHistory([]);
     setCustomTurn(null);
@@ -494,7 +466,6 @@ export default function App() {
     });
 
     if (!res.accepted) {
-      soundFx.playBluffBuzz();
       setCustomTurn({
         mood: 'bluff_caught',
         text: res.mentorReply,
@@ -530,10 +501,8 @@ export default function App() {
     }
 
     if (leveledUp) {
-      soundFx.playLevelUp();
       setLevelUpToast(`Level ${nextLevel} unlocked (+35 Bonus Coins)`);
     } else {
-      soundFx.playHonestChime();
     }
 
     const isNetflix =
@@ -560,7 +529,6 @@ export default function App() {
 
   const handleOpenOfferedChart = () => {
     if (!customTurn?.offerWhatIf) return;
-    soundFx.playClick();
     const { monthlyAmount, months, label } = customTurn.offerWhatIf;
     const result = simulateWhatIf({
       monthlyAmount,
@@ -582,7 +550,6 @@ export default function App() {
   const handleSendQuery = async (rawQuery: string) => {
     const trimmed = rawQuery.trim();
     if (!trimmed || asking) return;
-    soundFx.playClick();
     setChatInput('');
     setAsking(true);
     setCustomTurn({ mood: 'deadpan', text: 'Checking the ledger…' });
@@ -622,7 +589,6 @@ export default function App() {
 
   const handleChangeWhatIfAsset = (asset: WhatIfAsset) => {
     if (customTurn?.chart?.kind !== 'what_if') return;
-    soundFx.playClick();
     const prevRes = customTurn.chart.result;
     const updated = simulateWhatIf({
       monthlyAmount: prevRes.monthlyAmount,
@@ -648,7 +614,6 @@ export default function App() {
 
   const handleChangeWhatIfMonths = (months: number) => {
     if (customTurn?.chart?.kind !== 'what_if') return;
-    soundFx.playClick();
     const prevRes = customTurn.chart.result;
     const updated = simulateWhatIf({
       monthlyAmount: prevRes.monthlyAmount,
@@ -669,7 +634,6 @@ export default function App() {
 
   const handlePledgeCutback = (label: string, monthlyAmount: number) => {
     if (userState.pledgedActive) return;
-    soundFx.playHonestChime();
     setUserState((prev) => {
       if (!prev) return prev;
       const nextXp = prev.progress.xp + 25;
@@ -695,11 +659,9 @@ export default function App() {
   const handleSelectShopItem = (item: ShopItem) => {
     const res = purchaseOrEquipItem(progress, item);
     if (!res.ok) {
-      soundFx.playBluffBuzz();
       setLockerFeedback(res.reason ?? 'Locked');
       return;
     }
-    soundFx.playEquip();
     setUserState((prev) => (prev ? { ...prev, progress: res.next } : prev));
     setLockerFeedback(
       res.action === 'bought_and_equipped'
@@ -740,7 +702,6 @@ export default function App() {
                 id="customer-picker"
                 value={customerId}
                 onChange={(e) => {
-                  soundFx.playClick();
                   setLedgerReady(false);
                   setCustomerId(e.target.value);
                   const url = new URL(window.location.href);
@@ -764,7 +725,6 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => {
-                  soundFx.playClick();
                   setLockerOpen(true);
                 }}
                 aria-label="Open Locker"
@@ -773,20 +733,6 @@ export default function App() {
               >
                 <ShieldCheck className="w-3.5 h-3.5" />
                 <span className="max-[359px]:sr-only">Locker</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={toggleMute}
-                aria-label={muted ? 'Unmute sound' : 'Mute sound'}
-                className="w-7 h-7 flex items-center justify-center border border-[var(--app-border)] cursor-pointer"
-                style={{ backgroundColor: 'var(--app-surface-muted)' }}
-              >
-                {muted ? (
-                  <VolumeX className="w-3.5 h-3.5" />
-                ) : (
-                  <Volume2 className="w-3.5 h-3.5" />
-                )}
               </button>
             </div>
           </header>
@@ -815,6 +761,7 @@ export default function App() {
           <>
           <BasketsMeter
             baskets={baskets}
+            monthKey={latestMonth}
             lastShiftedBasket={lastShiftedBasket}
           />
 
@@ -872,7 +819,6 @@ export default function App() {
             type="button"
             data-testid="budget-bar"
             onClick={() => {
-              soundFx.playClick();
               setBudgetOpen(true);
             }}
             className="px-2 py-1 border-b-2 shrink-0 text-left cursor-pointer"
@@ -927,7 +873,6 @@ export default function App() {
                 picked={customTurn.pick}
                 onPick={handlePickCategory}
                 onClose={() => {
-                  soundFx.playClick();
                   setCustomTurn(null);
                 }}
               />
@@ -1070,7 +1015,6 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => {
-                        soundFx.playClick();
                         setCustomTurn(null);
                       }}
                       className="min-h-[40px] px-3 text-xs font-semibold pixel-btn cursor-pointer"
@@ -1152,7 +1096,7 @@ export default function App() {
                     chip.label === 'Peers?'
                       ? handleCompareYes()
                       : chip.label === 'Can I buy it?'
-                        ? (soundFx.playClick(), setBudgetOpen(true))
+                        ? setBudgetOpen(true)
                         : handleSendQuery(chip.query)
                   }
                   disabled={asking}
@@ -1205,7 +1149,6 @@ export default function App() {
           <BottomNav
             page={page}
             onChange={(p) => {
-              soundFx.playClick();
               setPage(p);
             }}
           />
