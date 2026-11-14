@@ -179,6 +179,137 @@ export function FinanceChart({
     );
   }
 
+  if (chart.kind === 'finland_board') {
+    const max = Math.max(1, ...chart.rows.flatMap((r) => [r.yours, r.finland]));
+    const VERDICT = {
+      more: { icon: '▲', label: 'more', color: 'var(--app-warning)' },
+      less: { icon: '▼', label: 'less', color: 'var(--app-accent)' },
+      similar: { icon: '≈', label: 'same', color: 'var(--app-text-muted)' },
+    } as const;
+    const totalDiff = chart.yoursTotal - chart.finlandTotal;
+    return (
+      <div className="pixel-card p-3" data-testid="chart-finland-board">
+        <div className="mb-2 flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <h3 className="font-num text-xs font-bold tracking-wide uppercase">{chart.title}</h3>
+            <p className="text-[11px] text-[var(--app-text-muted)]">{chart.period} · {chart.priceNote}</p>
+          </div>
+          <div className="flex flex-col items-end gap-0.5 shrink-0 text-[10px] font-semibold">
+            <span className="flex items-center gap-1"><i className="w-2.5 h-2 inline-block" style={{ backgroundColor: 'var(--app-text)' }} />You</span>
+            <span className="flex items-center gap-1"><i className="w-2.5 h-2 inline-block opacity-60" style={{ backgroundColor: 'var(--app-text-muted)' }} />Finland</span>
+          </div>
+        </div>
+
+        {/* Scoreboard header */}
+        <div
+          className="grid grid-cols-[1fr_auto_auto_auto] gap-x-2 px-1.5 py-1 font-num text-[10px] font-bold uppercase"
+          style={{ backgroundColor: 'var(--app-surface-muted)', border: '1px solid var(--app-border)' }}
+        >
+          <span>Category</span>
+          <span className="text-right w-12">You</span>
+          <span className="text-right w-12">Fin</span>
+          <span className="text-right w-12">vs</span>
+        </div>
+        <ul className="divide-y" style={{ borderColor: 'var(--app-border)' }}>
+          {chart.rows.map((r) => {
+            const v = VERDICT[r.verdict];
+            return (
+              <li key={r.category} className="px-1.5 py-1" style={{ borderColor: 'var(--app-border)' }}>
+                <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-2 items-center text-xs">
+                  <span className="font-medium truncate">{r.category}</span>
+                  <span className="font-num text-right w-12">€{r.yours.toFixed(0)}</span>
+                  <span className="font-num text-right w-12 text-[var(--app-text-muted)]">€{r.finland.toFixed(0)}</span>
+                  <span className="font-num text-right w-12 text-[11px] font-bold" style={{ color: v.color }}>
+                    {v.icon} {v.label}
+                  </span>
+                </div>
+                <div className="mt-0.5 space-y-px" aria-hidden="true">
+                  <div className="h-1" style={{ width: `${Math.max(1, (r.yours / max) * 100)}%`, backgroundColor: 'var(--app-text)' }} />
+                  <div className="h-1 opacity-60" style={{ width: `${Math.max(1, (r.finland / max) * 100)}%`, backgroundColor: 'var(--app-text-muted)' }} />
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+
+        {/* Total row */}
+        <div
+          className="grid grid-cols-[1fr_auto_auto_auto] gap-x-2 px-1.5 py-1.5 mt-1 text-xs font-bold items-center"
+          style={{ backgroundColor: 'var(--app-surface-muted)', border: '1px solid var(--app-border)' }}
+        >
+          <span>Total</span>
+          <span className="font-num text-right w-12">€{chart.yoursTotal.toFixed(0)}</span>
+          <span className="font-num text-right w-12 text-[var(--app-text-muted)]">€{chart.finlandTotal.toFixed(0)}</span>
+          <span
+            className="font-num text-right w-12 text-[11px]"
+            style={{ color: totalDiff > 0 ? 'var(--app-warning)' : 'var(--app-accent)' }}
+          >
+            {totalDiff > 0 ? '+' : '−'}€{Math.abs(totalDiff).toFixed(0)}
+          </span>
+        </div>
+        <p className="text-[10px] text-[var(--app-text-muted)] mt-1.5 leading-snug">
+          {chart.caveat} Source: {chart.source}.
+        </p>
+      </div>
+    );
+  }
+
+  if (chart.kind === 'emergency_fund') {
+    // Meter scaled to at least the goal, up to twice the goal.
+    const scale = Math.max(chart.goalMonths, Math.min(chart.goalMonths * 2, Math.ceil(chart.monthsCovered)));
+    const fillPct = Math.min(100, (Math.max(0, chart.monthsCovered) / scale) * 100);
+    const goalPct = (chart.goalMonths / scale) * 100;
+    const color =
+      chart.status === 'reached' ? 'var(--app-accent)' : chart.status === 'building' ? '#d97706' : 'var(--app-danger)';
+    const label = chart.status === 'reached' ? '✓ Goal reached' : chart.status === 'building' ? '! Getting there' : '✕ Not yet';
+    return (
+      <div className="pixel-card p-3.5" data-testid="chart-emergency-fund">
+        <div className="mb-3 flex items-start justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-semibold">{chart.title}</h3>
+            <p className="text-xs text-[var(--app-text-muted)]">
+              Goal: {chart.goalMonths} months of money going out = €{chart.target.toFixed(0)}
+            </p>
+          </div>
+          <span className="font-num text-[11px] font-bold shrink-0" style={{ color }}>
+            {label}
+          </span>
+        </div>
+        <div
+          className="relative h-3"
+          role="meter"
+          aria-valuemin={0}
+          aria-valuemax={scale}
+          aria-valuenow={Number(chart.monthsCovered.toFixed(1))}
+          aria-label={`Emergency fund covers ${chart.monthsCovered.toFixed(1)} months, goal ${chart.goalMonths}`}
+          style={{ backgroundColor: 'var(--app-surface-muted)', border: '1px solid var(--app-border)' }}
+        >
+          <div className="h-full" style={{ width: `${fillPct}%`, backgroundColor: color }} />
+          <div
+            className="absolute -top-1 -bottom-1 w-0.5"
+            style={{ left: `calc(${goalPct}% - 1px)`, backgroundColor: 'var(--app-text)' }}
+            title={`${chart.goalMonths}-month goal`}
+          />
+        </div>
+        <div className="grid grid-cols-3 gap-2 mt-3 text-center">
+          {[
+            ['On account', `€${chart.balance.toFixed(0)}`],
+            ['Months', chart.monthsCovered.toFixed(1)],
+            [chart.balance >= chart.target ? 'Above goal' : 'To go', `€${Math.abs(chart.target - chart.balance).toFixed(0)}`],
+          ].map(([k, v]) => (
+            <div key={k} className="p-1.5" style={{ backgroundColor: 'var(--app-surface-muted)', border: '1px solid var(--app-border)' }}>
+              <div className="text-[11px] text-[var(--app-text-muted)]">{k}</div>
+              <div className="font-num text-sm font-bold">{v}</div>
+            </div>
+          ))}
+        </div>
+        <p className="text-xs text-[var(--app-text-muted)] mt-2">
+          Money going out averages €{chart.monthlyOutgoings.toFixed(0)}/mo. Investments don't count: they aren't instant cash.
+        </p>
+      </div>
+    );
+  }
+
   // What-If Replay Chart (Index Fund default vs Nokia vs Savings vs Cash)
   const { result, sourceLabel } = chart;
   const pts = result.points;

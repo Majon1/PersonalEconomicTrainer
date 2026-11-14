@@ -4,14 +4,21 @@
 
 import { GoogleGenAI } from "@google/genai";
 import {
+  checkPurchase,
   computeBaskets,
+  computeBudgetStatus,
+  computeEmergencyFund,
+  suggestBudget,
+  computeMoneyMood,
   computeSafeToSpend,
   filterTransactions,
   getLatestMonthKey,
+  isNonSpending,
   resolveTxBasket,
   simulateWhatIf,
 } from "../src/game/engine.ts";
-import type { ChartPayload, LabelOverride, MentorMood, Transaction, WhatIfAsset } from "../src/game/types.ts";
+import type { Budget, ChartPayload, LabelOverride, MentorMood, Transaction, WhatIfAsset } from "../src/game/types.ts";
+import { buildFinlandBoard } from "./compare.ts";
 
 const MODEL = process.env.GEMINI_MODEL || "gemini-4-hydrogen";
 const THINKING = process.env.GEMINI_THINKING_LEVEL || "medium";
@@ -26,19 +33,55 @@ const TOOLS = [
   {
     type: "function" as const,
     name: "month_baskets",
-    description: "Totals for the latest month: income, mandatory regular, mandatory irregular, slips, and total spend. Call this for a general 'where did my money go' question.",
+    description: "Totals for the latest month: income, mandatory regular, mandatory irregular, slips (small habits up to €40), nice to have (bigger extras you could live without), total spend, and money moved to investments (saved, not spending). Call this for a general 'where did my money go' question.",
+    parameters: { type: "object", properties: {}, required: [] },
+  },
+  {
+    type: "function" as const,
+    name: "emergency_fund",
+    description: "The emergency fund: money on the account versus the goal of 3 months of money going out (also the 3-months-of-pay alternative), months covered, how much is missing. Investments don't count. Use for savings buffer, rainy-day or 'am I safe if something happens' questions.",
+    parameters: { type: "object", properties: {}, required: [] },
+  },
+  {
+    type: "function" as const,
+    name: "budget_status",
+    description: "The user's own monthly budget (limits for slips, nice to have, and optional categories) versus what's spent this month: spent, left, projected at this pace, and status ok/close/over. Returns has_budget false if they haven't set one.",
+    parameters: { type: "object", properties: {}, required: [] },
+  },
+  {
+    type: "function" as const,
+    name: "check_purchase",
+    description: "Before a buy: can the user afford a planned purchase? Checks it against their budget, the money needed for bills until payday, and the emergency fund. Returns verdict go / think / stop with reasons. Use for 'can I buy X for €Y', 'should I get…', 'can I afford…'.",
+    parameters: {
+      type: "object",
+      properties: {
+        amount: { type: "number", description: "Price in euros." },
+        category: {
+          type: "string",
+          enum: ["Restaurants", "Taxi", "Lifestyle", "Entertainment", "Travel", "Home & Tech", "Groceries", "Health"],
+          description: "Restaurants = cafés, takeaway, eating out; Lifestyle = clothes, shopping, sports gear; Entertainment = events, hobbies, games; Travel = trips, hotels, flights.",
+        },
+        what: { type: "string", description: "Short name of the item, e.g. 'new sneakers'." },
+      },
+      required: ["amount", "category"],
+    },
+  },
+  {
+    type: "function" as const,
+    name: "money_mood",
+    description: "How the latest month's decisions look: happy, mild or angry, a 0-100 score, and the reasons. Angry = a slip or nice-to-have bought while the balance couldn't cover the rent and bills still due before payday (or the account went into the red). Mild = spent more than came in, slips jumped, thin emergency fund, or almost nothing saved. Use for 'how am I doing', 'why are you angry', 'did I mess up'.",
     parameters: { type: "object", properties: {}, required: [] },
   },
   {
     type: "function" as const,
     name: "spend_series",
-    description: "Monthly spend for one focus, plus the latest month's total, count, and average. Use for taxis, restaurants, groceries, transport, housing, utilities, health, entertainment, lifestyle, travel, home tech, or slips.",
+    description: "Monthly spend for one focus, plus the latest month's total, count, and average. Use for taxis, restaurants, groceries, transport, housing, utilities, health, entertainment, lifestyle, travel, home tech, slips, or nice_to_have.",
     parameters: {
       type: "object",
       properties: {
         focus: {
           type: "string",
-          enum: ["taxi", "restaurants", "groceries", "transport", "housing", "utilities", "health", "entertainment", "lifestyle", "travel", "home_tech", "slips"],
+          enum: ["taxi", "restaurants", "groceries", "transport", "housing", "utilities", "health", "entertainment", "lifestyle", "travel", "home_tech", "slips", "nice_to_have"],
         },
       },
       required: ["focus"],
@@ -53,7 +96,7 @@ const TOOLS = [
   {
     type: "function" as const,
     name: "compare_to_finland",
-    description: "Compare the latest month with Statistics Finland household budget figures for the customer's age, price-adjusted with the consumer price index.",
+    description: "Compare the customer's average month (last 12 months) per category with Statistics Finland household budget figures for their age group, price-adjusted with the consumer price index. Shows the You vs Finland board.",
     parameters: { type: "object", properties: {}, required: [] },
   },
   {
@@ -78,7 +121,11 @@ const TOOLS = [
     parameters: {
       type: "object",
       properties: {
-        mood: { type: "string", enum: ["deadpan", "suspicious", "pointing", "impressed"] },
+        mood: {
+          type: "string",
+          enum: ["deadpan", "suspicious", "pointing", "impressed", "bluff_caught"],
+          description: "bluff_caught = angry (money_mood came back angry: treats while rent was at risk).",
+        },
         text: { type: "string" },
       },
       required: ["mood", "text"],
@@ -114,7 +161,8 @@ function matchesFocus(tx: Transaction, focus: string, overrides: LabelOverride[]
     case "lifestyle": return tx.category === "Lifestyle";
     case "travel": return tx.category === "Travel";
     case "home_tech": return tx.category === "Home & Tech";
-    case "slips": return resolveTxBasket(tx, overrides).basket === "slips";
+    case "slips": return !isNonSpending(tx) && resolveTxBasket(tx, overrides).basket === "slips";
+    case "nice_to_have": return !isNonSpending(tx) && resolveTxBasket(tx, overrides).basket === "nice_to_have";
     default: return false;
   }
 }
@@ -150,8 +198,22 @@ function sanitizeOverrides(raw: unknown): LabelOverride[] {
     if (!item || typeof item !== "object") return false;
     const basket = (item as LabelOverride).basket;
     const label = (item as LabelOverride).customLabel;
-    return typeof label === "string" && (basket === "mandatory_regular" || basket === "mandatory_irregular" || basket === "slips");
+    return typeof label === "string" && (basket === "mandatory_regular" || basket === "mandatory_irregular" || basket === "slips" || basket === "nice_to_have");
   }).slice(0, 80);
+}
+
+function sanitizeBudget(raw: unknown): Budget | null {
+  if (!raw || typeof raw !== "object") return null;
+  const b = raw as Record<string, unknown>;
+  const n = (v: unknown) => Math.max(0, Math.min(100000, Number(v) || 0));
+  const categories: Record<string, number> = {};
+  if (b.categories && typeof b.categories === "object") {
+    for (const [k, v] of Object.entries(b.categories as Record<string, unknown>).slice(0, 12)) {
+      if (n(v) > 0) categories[String(k).slice(0, 40)] = n(v);
+    }
+  }
+  const budget = { slips: n(b.slips), nice_to_have: n(b.nice_to_have), categories };
+  return budget.slips || budget.nice_to_have || Object.keys(categories).length ? budget : null;
 }
 
 export async function answerWithGemini(params: {
@@ -159,6 +221,7 @@ export async function answerWithGemini(params: {
   customer: { id: string; age: number; postalCode: string };
   transactions: Transaction[];
   overrides: unknown;
+  budget?: unknown;
   history: { role?: string; text?: string }[];
   benchmarks: any;
 }) {
@@ -166,6 +229,7 @@ export async function answerWithGemini(params: {
   if (!query) return { text: "Ask me something about the money.", mood: "deadpan" as MentorMood };
 
   const overrides = sanitizeOverrides(params.overrides);
+  const budget = sanitizeBudget(params.budget);
   const visible = filterTransactions(params.transactions, false);
   const latestMonth = getLatestMonthKey(visible);
   const today = visible.map((t) => t.date).sort().pop() ?? latestMonth;
@@ -180,7 +244,55 @@ export async function answerWithGemini(params: {
         mandatory_regular: baskets.mandatory_regular,
         mandatory_irregular: baskets.mandatory_irregular,
         slips: baskets.slips,
+        nice_to_have: baskets.nice_to_have,
         total_spend: baskets.totalSpend,
+        moved_to_investments: baskets.saved,
+      };
+    }
+
+    if (name === "emergency_fund") {
+      const ef = computeEmergencyFund(visible, overrides, latestMonth);
+      chart = {
+        kind: "emergency_fund",
+        title: "Emergency fund",
+        balance: ef.balance,
+        target: ef.target,
+        goalMonths: ef.goalMonths,
+        monthsCovered: ef.monthsCovered,
+        monthlyOutgoings: ef.monthlyOutgoings,
+        status: ef.status,
+      };
+      return { ...ef, note: "Goal = money on the account covering 3 months of money going out. Investments don't count." };
+    }
+
+    if (name === "budget_status") {
+      if (!budget) return { has_budget: false, suggestion: suggestBudget(visible, overrides), note: "They can set one with the budget bar under the baskets." };
+      const status = computeBudgetStatus(visible, overrides, budget, latestMonth);
+      return { has_budget: true, ...status };
+    }
+
+    if (name === "check_purchase") {
+      const verdict = checkPurchase({
+        transactions: visible,
+        overrides,
+        budget,
+        amount: Number(args.amount) || 0,
+        category: String(args.category || "Lifestyle"),
+        what: typeof args.what === "string" ? args.what : undefined,
+      });
+      return { ...verdict, has_budget: Boolean(budget) };
+    }
+
+    if (name === "money_mood") {
+      const mood = computeMoneyMood(visible, overrides, latestMonth);
+      return {
+        month: mood.month,
+        mood: mood.level,
+        mikko_face: mood.mentorMood,
+        score: mood.score,
+        reasons: mood.reasons,
+        risky_purchases: mood.risky.slice(0, 5),
+        emergency_fund_months: mood.emergency.monthsCovered,
       };
     }
 
@@ -213,36 +325,19 @@ export async function answerWithGemini(params: {
     }
 
     if (name === "compare_to_finland") {
-      const group = ageGroup(params.customer.age);
-      const table = params.benchmarks?.householdBudgetSurvey?.byAge?.[group]
-        ?? params.benchmarks?.householdBudgetSurvey?.byAge?.all;
-      const { factor, month: cpiMonth } = priceFactor(params.benchmarks, today);
-      const categories = table?.categories ?? {};
-      const yours = (category: string) => round2(visible
-        .filter((t) => t.date.startsWith(latestMonth) && t.category === category && t.amount < 0)
-        .reduce((sum, t) => sum + Math.abs(t.amount), 0));
-      const finland = (category: string) => round2(Number(categories[category] || 0) * factor);
-      const baskets = computeBaskets(visible, overrides, latestMonth);
-      const slipsAvg = round2(finland("Restaurants") + finland("Entertainment") + finland("Lifestyle"));
-      const rows = [
-        { category: "Restaurants", yours: yours("Restaurants"), finlandAvg: finland("Restaurants") },
-        { category: "Transport", yours: yours("Transportation"), finlandAvg: finland("Transportation") },
-        { category: "Groceries", yours: yours("Groceries"), finlandAvg: finland("Groceries") },
-        { category: "All Slips", yours: baskets.slips, finlandAvg: slipsAvg },
-      ];
-      chart = {
-        kind: "peer_compare",
-        title: `You vs Statistics Finland (${group})`,
-        subtitle: `${latestMonth}, survey euros lifted to ${cpiMonth ?? "today"} prices`,
-        rows,
-      };
+      const board = buildFinlandBoard({ customer: params.customer, transactions: params.transactions, benchmarks: params.benchmarks });
+      if (!board) return { error: "No Statistics Finland figures for this age group." };
+      chart = board;
       return {
-        age_group: group,
-        postal_code: params.customer.postalCode,
-        price_adjusted_to: cpiMonth,
-        source: "Statistics Finland, Household Budget Survey 2022, CC BY 4.0",
-        note: "Finland figures are per consumption unit per month (about one adult). All Slips compares your slips basket with restaurants + entertainment + lifestyle.",
-        rows,
+        age_group: board.ageGroup,
+        period: board.period,
+        price_adjustment: board.priceNote,
+        your_total_per_month: board.yoursTotal,
+        finland_total_per_month: board.finlandTotal,
+        categories_where_you_spend_less: board.lessCount,
+        rows: board.rows,
+        source: board.source,
+        caveat: board.caveat,
       };
     }
 
@@ -300,11 +395,20 @@ export async function answerWithGemini(params: {
 
   const system = `You are Mikko, the pixel-art money mentor inside S-mobiili. Deadpan, short, curious, never preachy.
 The account owner is ${params.customer.age}, postal code ${params.customer.postalCode}, Finland. Latest data month is ${latestMonth}. Today in the ledger is ${today}.
-Baskets: mandatory regular (rent, bills, groceries, commuting), mandatory irregular (health, home and tech), slips (small habits and nice-to-haves that leak out).
+Baskets: two you must pay, two you choose.
+- mandatory regular: rent, bills, groceries, commuting
+- mandatory irregular: health, home and tech (the broken washing machine)
+- slips: small habits up to €40 that slip through your fingers (coffees, quick lunches, snacks, taxis, parking)
+- nice to have: bigger extras you could live without if money got tight (travel, hobbies, events, shopping, dinners out). Never call them unnecessary.
+Money moved to investments is saving, not spending.
+Good habits: an emergency fund of 3 months of money going out (emergency_fund). Buying treats while the rent isn't covered makes you angry (money_mood); say so honestly but kindly and name the purchase and what was still due.
+Budget: ${budget ? `the user set monthly limits (slips €${budget.slips}, nice to have €${budget.nice_to_have}${Object.keys(budget.categories).length ? `, ${Object.entries(budget.categories).map(([k, v]) => `${k} €${v}`).join(", ")}` : ""}).` : "the user has no budget yet; you can suggest setting one (budget_status gives a suggestion)."}
+Steer them clear of buys they'd regret: whenever they mention buying, wanting or getting something, call check_purchase and pass on its verdict (go / think twice / skip it) with the main reason. Use suspicious for think, bluff_caught for stop, impressed for go. Never forbid; they decide.
 Rules:
 - Never invent or estimate a number. Call a tool first, then call speak exactly once.
 - Quote at most three figures from the tool result. Use euros like €38 or €38.50.
-- If a chart tool ran (spend_series, safe_to_spend, compare_to_finland, what_if), set mood to pointing.
+- If a chart tool ran (spend_series, safe_to_spend, compare_to_finland, what_if, emergency_fund), set mood to pointing.
+- After money_mood (no chart): use its mikko_face as the mood (bluff_caught for angry, suspicious for mild, impressed for happy).
 - Reply in the language the user writes in.
 - You run a simulator, you are not a licensed advisor. Describe the what-if result; do not tell them to buy a product.
 - Name Statistics Finland when you use compare_to_finland.`;

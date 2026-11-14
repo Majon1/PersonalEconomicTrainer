@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+/* Show the app inside a phone frame only when the screen is big enough in
+   both directions (desktop / tablet). Phones, in either orientation, get the
+   full screen. */
+@custom-variant framed (@media (min-width: 640px) and (min-height: 760px));
+
+/* Very short screens (phones in landscape): Mikko's room steps aside so the
+   dialogue and the Ask bar keep their space. */
+@custom-variant short (@media (max-height: 520px));
+
 @layer base {
   :root {
     --app-bg: #f3f6f4;

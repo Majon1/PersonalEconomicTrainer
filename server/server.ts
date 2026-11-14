@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer as createViteServer } from "vite";
 import { answerWithGemini } from "./chat.ts";
+import { buildFinlandBoard } from "./compare.ts";
 import { createPool, loadBenchmarks, loadCustomer, loadCustomerIndex } from "./db.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -48,6 +49,15 @@ app.get("/api/customers/:id", async (req, res) => {
   res.json(data);
 });
 
+// "You vs Finland" board, computed directly (no AI needed).
+app.get("/api/customers/:id/compare", async (req, res) => {
+  const data = await getCustomer(req.params.id);
+  if (!data) return res.status(404).json({ error: "Customer not found" });
+  const board = buildFinlandBoard({ customer: data.customer, transactions: data.transactions, benchmarks });
+  if (!board) return res.status(503).json({ error: "No Statistics Finland figures for this age group." });
+  res.json(board);
+});
+
 app.post("/api/chat", async (req, res) => {
   if (!process.env.GEMINI_API_KEY) {
     return res.status(503).json({ error: "No GEMINI_API_KEY in .env. Add it and restart." });
@@ -61,6 +71,7 @@ app.post("/api/chat", async (req, res) => {
       customer: data.customer,
       transactions: data.transactions,
       overrides: body.overrides,
+      budget: body.budget,
       history: body.history,
       benchmarks,
     });
@@ -86,8 +97,12 @@ if (process.env.NODE_ENV === "production" && existsSync(join(ROOT, "dist", "inde
   app.use(vite.middlewares);
 }
 
-app.listen(PORT, "127.0.0.1", () => {
+// HOST=0.0.0.0 lets a phone on the same Wi-Fi open the app at http://<this computer's IP>:PORT.
+// Anyone on that network can then use it (and the chat), so only on a network you trust.
+const HOST = process.env.HOST || "127.0.0.1";
+app.listen(PORT, HOST, () => {
   const model = process.env.GEMINI_MODEL || "gemini-4-hydrogen";
   console.log(`Personal Economic Trainer at http://localhost:${PORT}`);
+  if (HOST === "0.0.0.0") console.log(`Also reachable on your network: http://<this computer's IP>:${PORT}`);
   console.log(process.env.GEMINI_API_KEY ? `Chat uses ${model}` : "No GEMINI_API_KEY: the coach loads, chat stays off");
 });

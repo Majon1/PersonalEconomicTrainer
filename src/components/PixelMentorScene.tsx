@@ -108,17 +108,23 @@ export function PixelMentorScene({
     );
   }
 
-  // Full phone-screen background room (80 x 164 pixel grid)
+  // Room down to the desk edge (80 x 72 of the 80 x 164 grid), anchored to the
+  // bottom of its box so Mikko always sits right above the dialogue. Extra
+  // height shows more wall; extra width is filled by the matching bands below.
   return (
     <div
       className="absolute inset-0 pointer-events-none select-none overflow-hidden"
       data-testid="pixel-mentor"
       data-mood={mood}
       data-style={styleId}
+      style={{
+        background:
+          'linear-gradient(to bottom, #d7e5dc 0%, #d7e5dc 80.5%, #b7cbbd 80.5%, #b7cbbd 83.4%, #c5d6cb 83.4%, #c5d6cb 84.7%, #8b5a2b 84.7%, #8b5a2b 90.3%, #543314 90.3%, #543314 93%, #6f451f 93%)',
+      }}
     >
       <svg
-        viewBox="0 0 80 164"
-        preserveAspectRatio="xMidYMin slice"
+        viewBox="0 0 80 72"
+        preserveAspectRatio="xMidYMax meet"
         shapeRendering="crispEdges"
         className="w-full h-full pixel-crisp"
         role="img"

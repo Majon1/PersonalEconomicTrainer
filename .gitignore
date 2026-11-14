@@ -3,3 +3,6 @@
 
 node_modules/
 dist/
+
+# Large data file (363 MB, too big for GitHub)
+data/tx_junction_transactions.csv

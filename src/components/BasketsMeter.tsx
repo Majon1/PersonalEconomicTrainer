@@ -5,18 +5,20 @@ interface BasketsMeterProps {
   lastShiftedBasket?: BasketKey | null;
 }
 
-const ITEMS: { key: BasketKey; label: string; color: string }[] = [
-  { key: 'mandatory_regular', label: 'Regular', color: '#007a45' },
-  { key: 'mandatory_irregular', label: 'Irregular', color: '#2563eb' },
-  { key: 'slips', label: 'Slips', color: '#c25e00' },
+// Two baskets you must pay, two you choose.
+const ITEMS: { key: BasketKey; label: string; title: string; color: string }[] = [
+  { key: 'mandatory_regular', label: 'Regular', title: 'Mandatory & regular: rent, bills, groceries, commuting', color: '#007a45' },
+  { key: 'mandatory_irregular', label: 'Irregular', title: 'Mandatory & irregular: health, repairs, appliances', color: '#2563eb' },
+  { key: 'slips', label: 'Slips', title: 'Slips through your fingers: small habits up to €40 (coffees, quick lunches, taxis, parking)', color: '#c25e00' },
+  { key: 'nice_to_have', label: 'Nice', title: 'Nice to have: things you could live without if money got tight (travel, hobbies, events, shopping, dinners out)', color: '#7c3aed' },
 ];
 
 export function BasketsMeter({ baskets, lastShiftedBasket }: BasketsMeterProps) {
   return (
     <section
-      aria-label="Three Spending Baskets"
+      aria-label="Four Spending Baskets"
       data-testid="baskets-meter"
-      className="grid grid-cols-3 gap-1.5 px-2.5 py-2 border-b-2"
+      className="grid grid-cols-4 gap-1 px-2 py-1.5 short:py-1 border-b-2"
       style={{
         backgroundColor: 'var(--app-surface)',
         borderColor: 'var(--app-border)',
@@ -29,7 +31,8 @@ export function BasketsMeter({ baskets, lastShiftedBasket }: BasketsMeterProps) 
           <div
             key={item.key}
             data-testid={`basket-${item.key}`}
-            className={`px-2 py-1 flex items-center justify-between gap-1 transition-transform duration-150 ${
+            title={item.title}
+            className={`px-1.5 py-1 min-w-0 transition-transform duration-150 ${
               isShifted ? '-translate-y-0.5' : ''
             }`}
             style={{
@@ -37,19 +40,19 @@ export function BasketsMeter({ baskets, lastShiftedBasket }: BasketsMeterProps) 
               border: `1px solid ${isShifted ? item.color : 'var(--app-border)'}`,
             }}
           >
-            <div className="flex items-center gap-1.5 min-w-0">
+            <div className="flex items-center gap-1 min-w-0">
               <span
                 className="w-2 h-2 shrink-0"
                 style={{ backgroundColor: item.color }}
                 aria-hidden="true"
               />
-              <span className="text-[11px] font-semibold truncate">
+              <span className="text-[10px] font-semibold truncate">
                 {item.label}
               </span>
             </div>
-            <span className="font-num text-[11px] font-bold shrink-0">
+            <div className="font-num text-[11px] font-bold leading-tight">
               €{val.toFixed(0)}
-            </span>
+            </div>
           </div>
         );
       })}
