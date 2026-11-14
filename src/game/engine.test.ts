@@ -4,9 +4,13 @@ import { PERSONAS, SEED_TRANSACTIONS, SHOP_CATALOG } from './data';
 import {
   answerFinanceQuery,
   checkPurchase,
+  christmasQuarterGap,
   computeBaskets,
   computeBudgetStatus,
   computeEmergencyFund,
+  computeSeasonCompare,
+  seasonalFactor,
+  seasonalHeadsUp,
   suggestBudget,
   computeMoneyMood,
   computeSafeToSpend,
@@ -133,6 +137,56 @@ test("Mikko's budget suggestion trims the recent average", () => {
   ];
   // Jul-Sep average €30 slips -> 90% = €27 -> rounded down to €20
   assert.equal(suggestBudget(ledger).slips, 20);
+});
+
+test('seasons: Mikko warns about Black Friday from September and Christmas from October', () => {
+  assert.equal(seasonalFactor('2026-12'), 1.14);
+  const sep = seasonalHeadsUp('2026-09');
+  assert.equal(sep?.key, 'electronics');
+  assert.equal(sep?.month, '2026-11');
+  assert.match(sep!.title, /Black Friday/);
+  const oct = seasonalHeadsUp('2026-10');
+  assert.equal(oct?.key, 'retail');
+  assert.match(oct!.title, /Christmas/);
+  assert.match(oct!.text, /14% more/);
+  // ...and in euros, from the quarterly national accounts: €2,083 vs €1,922 a month
+  assert.equal(christmasQuarterGap(), 160);
+  assert.match(oct!.text, /about €160 a month more than in January–March/);
+});
+
+// Three ordinary months, then a fourth: €1,000 out and €1,100 in each month before.
+function seasonLedger(lastMonth: string, lastSpend: number, lastIncome: number) {
+  const months = ['2026-08', '2026-09', '2026-10', lastMonth];
+  return months.flatMap((m, i) => [
+    tx(`in${i}`, `${m}-01`, 'Salary', i === 3 ? lastIncome : 1100, 10000, { type: 'salary' }),
+    tx(`out${i}`, `${m}-10`, 'Groceries', -(i === 3 ? lastSpend : 1000), 10000, { mcc: '5411' }),
+  ]);
+}
+
+test('a small Christmas overspend is within the normal seasonal rise, not held against you', () => {
+  // December: €1,100 out, €1,050 in = €50 over. Normal December rise is 14% of ~€1,000 = €140.
+  const mood = computeMoneyMood(seasonLedger('2026-12', 1100, 1050), [], '2026-12');
+  assert.ok(!mood.reasons.meh.some((r) => r.includes('more than came in')));
+  assert.match(mood.season ?? '', /December is a busy month/);
+});
+
+test('the same overspend in an ordinary month is a mild nudge', () => {
+  // November isn't a busy month for shops overall (101), so €50 over counts.
+  const mood = computeMoneyMood(seasonLedger('2026-11', 1100, 1050), [], '2026-11');
+  assert.ok(mood.reasons.meh.some((r) => r.includes('more than came in')));
+  assert.equal(mood.season, undefined);
+});
+
+test('season chart: your year next to Finland, with December as Finland\'s peak', () => {
+  const chart = computeSeasonCompare(seasonLedger('2026-12', 1400, 1100));
+  assert.equal(chart.months.length, 12);
+  assert.equal(chart.months[11].finland, 114);
+  assert.equal(chart.months[0].yours, null); // no January in this ledger
+  assert.match(chart.yourPeak, /December/);
+  assert.match(chart.finlandPeak, /December \(\+14%\)/);
+  // euros per month by quarter: yours from the ledger, the average Finn's from Statistics Finland
+  assert.deepEqual(chart.quarters.map((q) => q.yours), [null, null, 1000, 1200]); // Q3: Aug+Sep, Q4: Oct €1,000 + Dec €1,400
+  assert.deepEqual(chart.quarters.map((q) => q.finland), [1922, 2027, 2031, 2083]);
 });
 
 test('spending more than came in with a thin buffer is a mild nudge', () => {

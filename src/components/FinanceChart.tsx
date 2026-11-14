@@ -179,6 +179,96 @@ export function FinanceChart({
     );
   }
 
+  if (chart.kind === 'season_compare') {
+    // Bars grow up or down from the "average month" line (100).
+    const span = Math.max(20, ...chart.months.flatMap((m) => [Math.abs((m.yours ?? 100) - 100), Math.abs(m.finland - 100)]));
+    const H = 56; // px from the line to the top or bottom
+    const bar = (v: number | null, color: string, faded: boolean, who: string, month: string) => {
+      if (v == null) return <div className="flex-1" />;
+      const d = v - 100;
+      const h = Math.max(1, Math.round((Math.abs(d) / span) * H));
+      return (
+        <div className="flex-1 relative" style={{ height: H * 2 }} title={`${month} · ${who}: ${d >= 0 ? '+' : ''}${d}%`}>
+          <div
+            className="absolute left-0 right-0"
+            style={{
+              backgroundColor: color,
+              opacity: faded ? 0.55 : 1,
+              height: h,
+              ...(d >= 0 ? { bottom: H } : { top: H }),
+            }}
+          />
+        </div>
+      );
+    };
+    return (
+      <div className="pixel-card p-3" data-testid="chart-season-compare">
+        <div className="mb-2 flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <h3 className="font-num text-xs font-bold tracking-wide uppercase">{chart.title}</h3>
+            <p className="text-[11px] text-[var(--app-text-muted)]">Up = more than an average month, down = less</p>
+          </div>
+          <div className="flex flex-col items-end gap-0.5 shrink-0 text-[10px] font-semibold">
+            <span className="flex items-center gap-1"><i className="w-2.5 h-2 inline-block" style={{ backgroundColor: 'var(--app-text)' }} />You</span>
+            <span className="flex items-center gap-1"><i className="w-2.5 h-2 inline-block opacity-55" style={{ backgroundColor: 'var(--app-text-muted)' }} />Finland</span>
+          </div>
+        </div>
+        <div className="relative" role="img" aria-label={`Your busiest month: ${chart.yourPeak}. Finland's: ${chart.finlandPeak}.`}>
+          <div className="absolute left-0 right-0 border-t" style={{ top: H, borderColor: 'var(--app-border)' }} />
+          <div className="flex gap-1">
+            {chart.months.map((m) => (
+              <div key={m.label} className="flex-1 flex gap-px">
+                {bar(m.yours, 'var(--app-text)', false, 'You', m.label)}
+                {bar(m.finland, 'var(--app-text-muted)', true, 'Finland', m.label)}
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-1 mt-0.5">
+            {chart.months.map((m) => (
+              <span key={m.label} className="flex-1 text-center font-num text-[9px] text-[var(--app-text-muted)]">
+                {m.label.slice(0, 1)}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-1.5 mt-2 text-xs">
+          <div className="p-1.5" style={{ backgroundColor: 'var(--app-surface-muted)', border: '1px solid var(--app-border)' }}>
+            <div className="text-[10px] text-[var(--app-text-muted)]">Your busiest month</div>
+            <div className="font-semibold">{chart.yourPeak}</div>
+          </div>
+          <div className="p-1.5" style={{ backgroundColor: 'var(--app-surface-muted)', border: '1px solid var(--app-border)' }}>
+            <div className="text-[10px] text-[var(--app-text-muted)]">Finland's busiest month</div>
+            <div className="font-semibold">{chart.finlandPeak}</div>
+          </div>
+        </div>
+        {/* In euros: your average month per quarter vs the average Finn's */}
+        <table className="w-full mt-2 text-xs" aria-label="Spending per month by quarter, in euros">
+          <thead>
+            <tr className="font-num text-[10px] uppercase" style={{ backgroundColor: 'var(--app-surface-muted)' }}>
+              <th className="text-left font-bold px-1.5 py-1">Per month</th>
+              <th className="text-right font-bold px-1.5 py-1">You</th>
+              <th className="text-right font-bold px-1.5 py-1">Average Finn</th>
+            </tr>
+          </thead>
+          <tbody>
+            {chart.quarters.map((q, i) => (
+              <tr key={q.label} className="border-b" style={{ borderColor: 'var(--app-border)' }}>
+                <td className="px-1.5 py-1">{q.label}</td>
+                <td className="px-1.5 py-1 text-right font-num">{q.yours != null ? `€${q.yours.toLocaleString('en-IE')}` : '–'}</td>
+                <td className="px-1.5 py-1 text-right font-num" style={{ fontWeight: i === 3 ? 700 : 400 }}>
+                  €{q.finland.toLocaleString('en-IE')}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="text-[10px] text-[var(--app-text-muted)] mt-1.5 leading-snug">
+          Bars: shop sales, {chart.source}. Euros: {chart.quartersNote}
+        </p>
+      </div>
+    );
+  }
+
   if (chart.kind === 'finland_board') {
     const max = Math.max(1, ...chart.rows.flatMap((r) => [r.yours, r.finland]));
     const VERDICT = {

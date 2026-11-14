@@ -12,6 +12,8 @@ import {
   checkPurchase,
   computeBudgetStatus,
   computeMoneyMood,
+  computeSeasonCompare,
+  seasonalHeadsUp,
   suggestBudget,
   detectSuspicionQuests,
   filterTransactions,
@@ -264,6 +266,14 @@ export default function App() {
     () => (budget ? computeBudgetStatus(visibleTxs, userState?.overrides ?? [], budget, latestMonth) : null),
     [budget, visibleTxs, userState?.overrides, latestMonth],
   );
+  // A busy spending season in Finland in the next month or two (Statistics Finland).
+  // Seasons follow the real calendar, not the last month in the data. For testing,
+  // ?season=YYYY-MM pretends it's that month (e.g. ?season=2026-11 → Christmas).
+  const seasonAhead = useMemo(() => {
+    const forced = new URLSearchParams(window.location.search).get('season');
+    const now = forced && /^\d{4}-\d{2}$/.test(forced) ? forced : new Date().toISOString().slice(0, 7);
+    return seasonalHeadsUp(now);
+  }, []);
 
   // What Mikko opens with, once per customer per session, most urgent first:
   // 1. rent at risk  2. a budget that's used up or nearly  3. the Finland comparison offer.
@@ -287,10 +297,18 @@ export default function App() {
             ? `Your ${worst.label.toLowerCase()} budget is blown: €${worst.spent.toFixed(0)} of €${worst.limit.toFixed(0)}. Hold off on ${worst.label.toLowerCase()} until next month.`
             : `Heads up: €${Math.max(0, worst.left).toFixed(0)} left of your ${worst.label.toLowerCase()} budget with ${budgetStatus?.daysLeft} days to go. Check with me before you buy.`,
       });
+    } else if (seasonAhead) {
+      // A busy spending season is coming (Christmas, Black Friday, summer…).
+      // …and still offer the You vs Finland board, where "Seasons" shows the full year.
+      setCustomTurn({
+        mood: 'pointing',
+        text: `${seasonAhead.text} Want to see how you compare with other Finns?`,
+        offerCompare: true,
+      });
     } else {
       setCustomTurn({ mood: 'pointing', text: COMPARE_OFFER, offerCompare: true });
     }
-  }, [ledgerReady, customerId, moneyMood, budgetStatus]);
+  }, [ledgerReady, customerId, moneyMood, budgetStatus, seasonAhead]);
 
   if (loadError || !userState || !progress || !ledgerReady || !customerId) {
     return (
@@ -423,7 +441,18 @@ export default function App() {
     const lines = [...r.bad, ...r.meh, ...r.good.slice(0, 2)].map((x) => x.charAt(0).toUpperCase() + x.slice(1));
     setCustomTurn({
       mood: moneyMood.mentorMood,
-      text: `${MOOD_LABEL[moneyMood.level]} (${moneyMood.score}/100) in ${moneyMood.month}. ${lines.join('. ')}.`,
+      text: `${MOOD_LABEL[moneyMood.level]} (${moneyMood.score}/100) in ${moneyMood.month}. ${lines.join('. ')}.${moneyMood.season ? ` ${moneyMood.season}` : ''}`,
+    });
+  };
+
+  // "Seasons" on the You vs Finland wall: your year next to Finland's.
+  const handleShowSeasons = () => {
+    const chart = computeSeasonCompare(visibleTxs, userState.overrides);
+    const ahead = seasonAhead ? ` Coming up: ${seasonAhead.title}.` : '';
+    setCustomTurn({
+      mood: 'pointing',
+      text: `Your busiest month is ${chart.yourPeak}; Finland's is ${chart.finlandPeak}. January and February are the quiet months for most Finns.${ahead}`,
+      chart,
     });
   };
 
@@ -920,6 +949,39 @@ export default function App() {
               </div>
             )}
           </button>
+
+          {/* Always-available ways to Statistics Finland: the board and the seasons */}
+          <div
+            className="grid grid-cols-2 gap-1 px-2 py-1.5 border-b-2 shrink-0"
+            style={{ backgroundColor: 'var(--app-surface)', borderColor: 'var(--app-border)' }}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setMonthOpen(false);
+                void handleCompareYes();
+              }}
+              data-testid="open-finland"
+              className="min-h-[36px] px-2 text-[11px] font-semibold pixel-btn cursor-pointer flex items-center justify-between gap-1"
+              style={{ backgroundColor: 'var(--app-surface-muted)', color: 'var(--app-text)' }}
+            >
+              <span>You vs Finland</span>
+              <ChevronRight className="w-3.5 h-3.5 shrink-0" />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMonthOpen(false);
+                handleShowSeasons();
+              }}
+              data-testid="open-seasons"
+              className="min-h-[36px] px-2 text-[11px] font-semibold pixel-btn cursor-pointer flex items-center justify-between gap-1"
+              style={{ backgroundColor: 'var(--app-surface-muted)', color: 'var(--app-text)' }}
+            >
+              <span>Seasons{seasonAhead ? `: ${seasonAhead.title}` : ''}</span>
+              <ChevronRight className="w-3.5 h-3.5 shrink-0" />
+            </button>
+          </div>
           </>
           )}
 
@@ -941,6 +1003,7 @@ export default function App() {
                 board={customTurn.chart}
                 picked={customTurn.pick}
                 onPick={handlePickCategory}
+                onSeasons={handleShowSeasons}
                 onClose={() => {
                   setCustomTurn(null);
                 }}

@@ -1,4 +1,5 @@
 import { SHOP_CATALOG } from './data';
+import { SEASONALITY, type SeasonSeries } from './seasonality';
 import type {
   BasketKey,
   BasketSummary,
@@ -13,6 +14,7 @@ import type {
   MoneyMood,
   MoneyMoodLevel,
   RiskyPurchase,
+  SeasonHeadsUp,
   PersonaConfig,
   PlayerProgress,
   ShopItem,
@@ -292,10 +294,29 @@ export function computeMoneyMood(
     }
   }
   if (negativeDays) bad.push(`account in the red on ${negativeDays} day${negativeDays > 1 ? 's' : ''}`);
-  if (s.income > 0 && net < 0) meh.push(`spent ${e0(-net)} more than came in`);
+
+  // Seasons: in a month when all of Finland spends more (Christmas, summer),
+  // a rise within that normal seasonal bump isn't held against you.
+  const seasonF = seasonalFactor(month);
+  const busy = seasonF >= 1.05;
+  const seasonPct = Math.round((seasonF - 1) * 100);
+  const mName = monthLabel(month);
+  const prevSpend = prior.length ? prior.reduce((a, x) => a + x.totalSpend, 0) / prior.length : s.totalSpend;
+  let season: string | undefined;
+  if (s.income > 0 && net < 0) {
+    const allowance = busy ? prevSpend * (seasonF - 1) : 0;
+    if (-net <= allowance) {
+      season = `You spent ${e0(-net)} more than came in, but ${mName} is a busy month: Finns spend about ${seasonPct}% more than usual, so that's within the normal seasonal rise.`;
+    } else {
+      meh.push(`spent ${e0(-net)} more than came in${busy ? `, more than the usual ${seasonPct}% ${mName} rise` : ''}`);
+    }
+  }
   if (ef.monthsCovered < 1) meh.push(`no real emergency fund yet (goal: ${EMERGENCY_FUND_MONTHS} months, ${e0(ef.target)})`);
-  if (prior.length && s.slips > prevSlips * 1.5 && s.slips - prevSlips > 50) {
+  const jumped = (factor: number) => prior.length > 0 && s.slips > prevSlips * 1.5 * factor && s.slips - prevSlips * factor > 50;
+  if (jumped(Math.max(1, seasonF))) {
     meh.push(`small slips jumped to ${e0(s.slips)} (usually ${e0(prevSlips)})`);
+  } else if (jumped(1) && busy) {
+    season ??= `Your small slips rose to ${e0(s.slips)} (usually ${e0(prevSlips)}), but ${mName} is a busy month in Finland, so I'm not counting it against you.`;
   }
   if (savingsRate != null && savingsRate >= 0 && savingsRate < 0.05) meh.push('almost nothing left over to save');
   if (ef.status === 'reached') good.push(`emergency fund covers ${Math.floor(ef.monthsCovered)} months: goal reached`);
@@ -315,7 +336,139 @@ export function computeMoneyMood(
       : level === 'mild'
         ? `Not bad, but: ${meh[0]}.`
         : `Living within your means. ${capitalise(good[0] ?? 'Nice work')}.`;
-  return { month, level, mentorMood: MOOD_FACE[level], score, headline, reasons: { bad, meh, good }, risky, emergency: ef };
+  return { month, level, mentorMood: MOOD_FACE[level], score, headline, reasons: { bad, meh, good }, risky, emergency: ef, season };
+}
+
+// ---------------------------------------------------------------------------
+// Seasons: Finland's month-by-month spending pattern (Statistics Finland)
+// ---------------------------------------------------------------------------
+
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+function monthLabel(monthKey: string): string {
+  return MONTH_NAMES[Number(monthKey.slice(5, 7)) - 1] ?? monthKey;
+}
+
+function addMonths(monthKey: string, n: number): string {
+  const [y, m] = monthKey.split('-').map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + n, 1));
+  return d.toISOString().slice(0, 7);
+}
+
+/** Finland's seasonal factor for a month: 1.14 = shops sell 14% more than in an average month. */
+export function seasonalFactor(monthKey: string, series: SeasonSeries = 'retail'): number {
+  const idx = SEASONALITY.series[series].profile[Number(monthKey.slice(5, 7)) - 1];
+  return idx ? idx / 100 : 1;
+}
+
+/**
+ * Look one and two months ahead: is a busy spending season coming? Picks the
+ * most striking one (Christmas, Black Friday, summer, renovation season...).
+ */
+/**
+ * How much more the average Finn spends per month in October–December than in
+ * January–March (quarterly national accounts), rounded to €10.
+ */
+export function christmasQuarterGap(): number {
+  const q = SEASONALITY.household.perPersonMonthByQuarter;
+  return Math.round((q[3] - q[0]) / 10) * 10;
+}
+
+export function seasonalHeadsUp(monthKey: string): SeasonHeadsUp | null {
+  const candidates: { series: SeasonSeries; min: number; weight?: number; title: (m: string) => string; text: (m: string, pct: number) => string }[] = [
+    {
+      series: 'retail', min: 110, weight: 2.5, // all shops: affects everyone, so it outranks single categories
+      title: (m) => (m === 'December' ? 'Christmas is coming' : `${m} is a big shopping month`),
+      text: (m, p) => {
+        const gap = christmasQuarterGap();
+        const euros = m === 'December' && gap > 0
+          ? ` In October–December the average Finn spends about €${gap} a month more than in January–March.`
+          : '';
+        return `${m} is coming: shops in Finland sell about ${p}% more than in an average month.${euros} Putting a little aside now keeps it from hitting your budget.`;
+      },
+    },
+    {
+      series: 'electronics', min: 120,
+      title: (m) => (m === 'November' ? 'Black Friday is coming' : `${m}: gadget season`),
+      text: (m, p) => `${m === 'November' ? 'Black Friday is coming' : `${m} is coming`}: electronics sales in Finland jump about ${p}% above a normal month. Decide what you actually need before the deals start.`,
+    },
+    {
+      series: 'hotels', min: 115,
+      title: () => 'Holiday season ahead',
+      text: (m, p) => `${m} is holiday season: Finns spend about ${p}% more on hotels and trips. If you're planning one, start a small travel pot now.`,
+    },
+    {
+      series: 'home', min: 115,
+      title: () => 'Home and garden season',
+      text: (m, p) => `${m} is home and garden season: sales of home equipment run about ${p}% above normal. Good time to plan before you buy.`,
+    },
+    {
+      series: 'restaurants', min: 110,
+      title: () => 'Terrace season',
+      text: (m, p) => `${m} is terrace season: Finns spend about ${p}% more in restaurants and cafés. Easy month for slips to add up.`,
+    },
+  ];
+  let best: SeasonHeadsUp | null = null;
+  let bestScore = 0;
+  for (const ahead of [1, 2]) {
+    const m = addMonths(monthKey, ahead);
+    const name = monthLabel(m);
+    for (const c of candidates) {
+      const idx = SEASONALITY.series[c.series].profile[Number(m.slice(5, 7)) - 1];
+      // prefer the nearer month a little
+      const score = ((idx - c.min) / c.min) * (c.weight ?? 1) - (ahead - 1) * 0.02;
+      if (idx >= c.min && score > bestScore) {
+        bestScore = score;
+        best = { month: m, key: c.series, index: idx, title: c.title(name), text: c.text(name, idx - 100) };
+      }
+    }
+  }
+  return best;
+}
+
+/**
+ * Your spending pattern over the calendar year next to Finland's: each month
+ * against your own average month (100), from all the data there is.
+ */
+export function computeSeasonCompare(transactions: Transaction[], overrides: LabelOverride[] = []): Extract<ChartPayload, { kind: 'season_compare' }> {
+  const byCal: number[][] = Array.from({ length: 12 }, () => []);
+  for (const m of monthKeys(transactions)) {
+    byCal[Number(m.slice(5, 7)) - 1].push(computeBaskets(transactions, overrides, m).totalSpend);
+  }
+  const avgs = byCal.map((v) => (v.length ? v.reduce((a, x) => a + x, 0) / v.length : null));
+  const known = avgs.filter((v): v is number => v != null);
+  const mean = known.reduce((a, v) => a + v, 0) / Math.max(1, known.length);
+  const fin = SEASONALITY.series.retail.profile;
+  const rows = MONTH_NAMES.map((name, i) => ({
+    label: name.slice(0, 3),
+    yours: avgs[i] != null && mean > 0 ? Math.round(((avgs[i] as number) / mean) * 100) : null,
+    finland: fin[i],
+  }));
+  const peak = (vals: (number | null)[]) => {
+    let bi = 0;
+    vals.forEach((v, i) => { if ((v ?? -1) > (vals[bi] ?? -1)) bi = i; });
+    return `${MONTH_NAMES[bi]} (${(vals[bi] ?? 100) >= 100 ? '+' : ''}${(vals[bi] ?? 100) - 100}%)`;
+  };
+  // Euros per month by quarter: your average month vs the average Finn's.
+  const hh = SEASONALITY.household;
+  const quarters = hh.quarters.map((label, qi) => {
+    const yours = byCal.slice(qi * 3, qi * 3 + 3).flat();
+    return {
+      label,
+      yours: yours.length ? Math.round(yours.reduce((a, x) => a + x, 0) / yours.length) : null,
+      finland: hh.perPersonMonthByQuarter[qi],
+    };
+  });
+  return {
+    kind: 'season_compare',
+    title: 'Your year vs Finland',
+    months: rows,
+    yourPeak: peak(rows.map((r) => r.yours)),
+    finlandPeak: peak(rows.map((r) => r.finland)),
+    source: `${SEASONALITY.source}, ${SEASONALITY.years[0]}–${SEASONALITY.years[SEASONALITY.years.length - 1]}`,
+    quarters,
+    quartersNote: `Average Finn: all household spending per person (children included), ${SEASONALITY.years[0]}–${SEASONALITY.years[SEASONALITY.years.length - 1]}. Source: Statistics Finland, quarterly national accounts.`,
+  };
 }
 
 // ---------------------------------------------------------------------------

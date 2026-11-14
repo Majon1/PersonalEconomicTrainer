@@ -7,6 +7,7 @@ interface FinlandWallProps {
   board: Board;
   picked?: string;
   onPick: (category: string) => void;
+  onSeasons: () => void;
   onClose: () => void;
 }
 
@@ -26,7 +27,7 @@ const TONE = {
  * "You vs Finland" pinned to the wall of Mikko's room: one tile per category
  * on either side of him. Tap a tile for the details.
  */
-export function FinlandWall({ board, picked, onPick, onClose }: FinlandWallProps) {
+export function FinlandWall({ board, picked, onPick, onSeasons, onClose }: FinlandWallProps) {
   const half = Math.ceil(board.rows.length / 2);
   const columns = [board.rows.slice(0, half), board.rows.slice(half)];
 
@@ -69,6 +70,15 @@ export function FinlandWall({ board, picked, onPick, onClose }: FinlandWallProps
         <span className="font-num text-[10px] font-bold uppercase whitespace-nowrap">
           You vs Finland · {board.ageGroup}
         </span>
+        <button
+          type="button"
+          onClick={onSeasons}
+          data-testid="show-seasons"
+          className="px-1.5 h-5 text-[10px] font-semibold cursor-pointer underline"
+          style={{ backgroundColor: 'var(--app-surface-muted)' }}
+        >
+          Seasons
+        </button>
         <button
           type="button"
           onClick={onClose}

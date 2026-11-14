@@ -79,6 +79,17 @@ export interface MoneyMood {
   reasons: { bad: string[]; meh: string[]; good: string[] };
   risky: RiskyPurchase[];
   emergency: EmergencyFund;
+  /** set when this is a seasonal high month and Mikko made allowance for it */
+  season?: string;
+}
+
+/** Mikko's look-ahead: a busy spending season coming up in Finland. */
+export interface SeasonHeadsUp {
+  month: string; // YYYY-MM it's about
+  key: string; // which series, e.g. 'retail', 'electronics'
+  index: number; // Finland's seasonal index for that month (100 = average)
+  title: string;
+  text: string;
 }
 
 export type MentorMood =
@@ -250,6 +261,18 @@ export type ChartPayload =
       surpriseBuffer: number;
       safeWeekly: number;
       dailyAllowance: number;
+    }
+  | {
+      kind: 'season_compare';
+      title: string;
+      /** Jan..Dec: your spending and Finland's shop sales, 100 = an average month */
+      months: { label: string; yours: number | null; finland: number }[];
+      yourPeak: string;
+      finlandPeak: string;
+      source: string;
+      /** euros per month by quarter: your average month vs the average Finn's */
+      quarters: { label: string; yours: number | null; finland: number }[];
+      quartersNote: string;
     }
   | {
       kind: 'finland_board';

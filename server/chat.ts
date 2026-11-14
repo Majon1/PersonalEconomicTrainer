@@ -3,9 +3,14 @@
 // invents a figure: it calls a tool, then speak().
 
 import { GoogleGenAI } from "@google/genai";
+import { SEASONALITY } from "../src/game/seasonality.ts";
 import {
   checkPurchase,
+  christmasQuarterGap,
   computeBaskets,
+  computeSeasonCompare,
+  seasonalFactor,
+  seasonalHeadsUp,
   computeBudgetStatus,
   computeEmergencyFund,
   suggestBudget,
@@ -65,6 +70,12 @@ const TOOLS = [
       },
       required: ["amount", "category"],
     },
+  },
+  {
+    type: "function" as const,
+    name: "seasonal_pattern",
+    description: "Seasons: Finland's month-by-month spending pattern from Statistics Finland (shop and restaurant sales, 100 = an average month; e.g. December retail 114 = +14%), the user's own pattern over the calendar year, and the busy season coming next. Use for Christmas, Black Friday, summer, 'when do people spend most', 'is it normal that I spent more in December'. Shows a chart.",
+    parameters: { type: "object", properties: {}, required: [] },
   },
   {
     type: "function" as const,
@@ -286,6 +297,23 @@ export async function answerWithGemini(params: {
       return { ...verdict, has_budget: Boolean(budget) };
     }
 
+    if (name === "seasonal_pattern") {
+      const compare = computeSeasonCompare(visible, overrides);
+      chart = compare;
+      return {
+        finland: Object.fromEntries(Object.entries(SEASONALITY.series).map(([k, s]) => [k, { label: s.label, by_month_jan_to_dec: s.profile }])),
+        yours_by_month_jan_to_dec: compare.months.map((m) => m.yours),
+        your_busiest_month: compare.yourPeak,
+        finland_busiest_month: compare.finlandPeak,
+        coming_up: seasonalHeadsUp(new Date().toISOString().slice(0, 7)), // seasons follow the real calendar
+        this_month_season_factor: seasonalFactor(latestMonth),
+        source: SEASONALITY.source,
+        note: SEASONALITY.note,
+        average_finn_euros_per_person_per_month_by_quarter: { quarters: SEASONALITY.household.quarters, euros: SEASONALITY.household.perPersonMonthByQuarter, source: SEASONALITY.household.source, note: SEASONALITY.household.note },
+        your_euros_per_month_by_quarter: compare.quarters,
+      };
+    }
+
     if (name === "money_mood") {
       const mood = computeMoneyMood(visible, overrides, latestMonth);
       return {
@@ -407,10 +435,11 @@ Money moved to investments is saving, not spending.
 Good habits: an emergency fund of 3 months of money going out (emergency_fund). Buying treats while the rent isn't covered makes you angry (money_mood); say so honestly but kindly and name the purchase and what was still due.
 Budget: ${budget ? `the user set monthly limits (slips €${budget.slips}, nice to have €${budget.nice_to_have}${Object.keys(budget.categories).length ? `, ${Object.entries(budget.categories).map(([k, v]) => `${k} €${v}`).join(", ")}` : ""}).` : "the user has no budget yet; you can suggest setting one (budget_status gives a suggestion)."}
 Steer them clear of buys they'd regret: whenever they mention buying, wanting or getting something, call check_purchase and pass on its verdict (go / think twice / skip it) with the main reason. Use suspicious for think, bluff_caught for stop, impressed for go. Never forbid; they decide.
+Seasons: Finns spend more in some months (Christmas: shops +14%, and in October–December the average Finn spends about €${christmasQuarterGap()} a month more than in January–March; Black Friday: electronics +27%; summer: restaurants and hotels up) and less in January and February. Use seasonal_pattern for these questions, and when a higher month is normal for the season, say so rather than blaming them.
 Rules:
 - Never invent or estimate a number. Call a tool first, then call speak exactly once.
 - Quote at most three figures from the tool result. Use euros like €38 or €38.50.
-- If a chart tool ran (spend_series, safe_to_spend, compare_to_finland, what_if, emergency_fund), set mood to pointing.
+- If a chart tool ran (spend_series, safe_to_spend, compare_to_finland, what_if, emergency_fund, seasonal_pattern), set mood to pointing.
 - After money_mood (no chart): use its mikko_face as the mood (bluff_caught for angry, suspicious for mild, impressed for happy).
 - Reply in the language the user writes in.
 - You run a simulator, you are not a licensed advisor. Describe the what-if result; do not tell them to buy a product.
