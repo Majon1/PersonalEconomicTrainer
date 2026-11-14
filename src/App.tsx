@@ -5,7 +5,7 @@ import { FinanceChart } from './components/FinanceChart';
 import { LockerView } from './components/LockerView';
 import { BudgetView } from './components/BudgetView';
 import { FinlandWall, pctVsFinland } from './components/FinlandWall';
-import { BottomNav, HomePage, MoneyInPage, SpendingPage, type PageKey } from './components/Pages';
+import { HomePage, MoneyInPage, PAGES, PageMenu, SpendingPage, type PageKey } from './components/Pages';
 import { PixelMentorScene } from './components/PixelMentorScene';
 import {
   computeBaskets,
@@ -20,6 +20,7 @@ import {
   purchaseOrEquipItem,
   resolveInterrogationChoice,
   simulateWhatIf,
+  xpProgressInLevel,
 } from './game/engine';
 import type {
   BasketKey,
@@ -309,6 +310,9 @@ export default function App() {
       </div>
     );
   }
+
+  // XP towards the next level, shown under the balance on every page.
+  const xpInfo = xpProgressInLevel(progress.xp);
 
   // Balance after the latest transaction, shown at the top of every page.
   const latestTx = visibleTxs.reduce<Transaction | null>(
@@ -750,32 +754,74 @@ export default function App() {
             </span>
           </div>
 
-          {page !== 'mikko' ? (
-            <div className="flex-1 min-h-0 overflow-y-auto">
-              {page === 'spending' && <SpendingPage transactions={visibleTxs} overrides={userState.overrides} />}
-              {page === 'money_in' && <MoneyInPage transactions={visibleTxs} />}
-              {page === 'home' && <HomePage customerId={customerId} transactions={visibleTxs} />}
+          {/* XP towards the next level, on every page */}
+          <div
+            className="px-3 py-1 flex items-center gap-2 border-b-2 shrink-0"
+            style={{ backgroundColor: 'var(--app-surface)', borderColor: 'var(--app-border)' }}
+            data-testid="xp-bar"
+          >
+            <span className="font-num text-[11px] font-bold shrink-0">Level {xpInfo.level}</span>
+            <div
+              className="flex-1 h-2.5 overflow-hidden"
+              role="progressbar"
+              aria-label={`Level ${xpInfo.level}: ${xpInfo.currentInLevel} of ${xpInfo.neededForNext} XP to level ${xpInfo.level + 1}`}
+              aria-valuemin={0}
+              aria-valuemax={xpInfo.neededForNext}
+              aria-valuenow={xpInfo.currentInLevel}
+              style={{ backgroundColor: 'var(--app-surface-muted)', border: '1px solid var(--app-border)' }}
+            >
+              <div
+                className="h-full transition-all duration-300"
+                style={{ width: `${xpInfo.pct}%`, backgroundColor: 'var(--app-accent-bright)' }}
+              />
             </div>
+            <span className="font-num text-[11px] text-[var(--app-text-muted)] shrink-0">
+              {xpInfo.currentInLevel}/{xpInfo.neededForNext} XP
+            </span>
+          </div>
+
+          {page !== 'mikko' ? (
+            <>
+              {/* Page menu + the page's name */}
+              <div
+                className="relative z-20 min-h-11 pl-3 pr-3 py-1 flex items-center gap-3 border-b-2 shrink-0"
+                style={{ backgroundColor: 'var(--app-surface)', borderColor: 'var(--app-border)' }}
+              >
+                <PageMenu page={page} onChange={setPage} />
+                <span className="text-sm font-semibold truncate">{PAGES.find((p) => p.key === page)?.label}</span>
+              </div>
+              <div className="flex-1 min-h-0 overflow-y-auto" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+                {page === 'spending' && <SpendingPage transactions={visibleTxs} overrides={userState.overrides} />}
+                {page === 'money_in' && <MoneyInPage transactions={visibleTxs} />}
+                {page === 'home' && <HomePage customerId={customerId} transactions={visibleTxs} />}
+              </div>
+            </>
           ) : (
           <>
-          <button
-            type="button"
-            onClick={() => setMonthOpen((open) => !open)}
-            aria-expanded={monthOpen}
-            className="min-h-11 px-3 py-2 flex items-center justify-between gap-2 border-b-2 shrink-0 text-left cursor-pointer"
+          {/* Page menu, then "This month" (tap to open the month's details) */}
+          <div
+            className="relative z-20 min-h-11 pl-3 flex items-center border-b-2 shrink-0"
             style={{ backgroundColor: 'var(--app-surface)', borderColor: 'var(--app-border)' }}
           >
-            <span className="min-w-0">
-              <span className="block text-[11px] font-semibold text-[var(--app-text-muted)]">This month</span>
-              <span className="block text-sm font-semibold truncate">{MOOD_LABEL[moneyMood.level]}</span>
-            </span>
-            <span className="flex items-center gap-2 shrink-0">
-              <span className="font-num text-xs font-bold">
-                Fund {Math.min(99, moneyMood.emergency.monthsCovered).toFixed(1)}/{moneyMood.emergency.goalMonths}
+            <PageMenu page={page} onChange={setPage} />
+            <button
+              type="button"
+              onClick={() => setMonthOpen((open) => !open)}
+              aria-expanded={monthOpen}
+              className="flex-1 min-w-0 self-stretch pl-3 pr-3 py-2 flex items-center justify-between gap-2 text-left cursor-pointer"
+            >
+              <span className="min-w-0">
+                <span className="block text-[11px] font-semibold text-[var(--app-text-muted)]">This month</span>
+                <span className="block text-sm font-semibold truncate">{MOOD_LABEL[moneyMood.level]}</span>
               </span>
-              <ChevronDown className={`w-4 h-4 transition-transform ${monthOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
-            </span>
-          </button>
+              <span className="flex items-center gap-2 shrink-0">
+                <span className="font-num text-xs font-bold">
+                  Fund {Math.min(99, moneyMood.emergency.monthsCovered).toFixed(1)}/{moneyMood.emergency.goalMonths}
+                </span>
+                <ChevronDown className={`w-4 h-4 transition-transform ${monthOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+              </span>
+            </button>
+          </div>
 
           {monthOpen && (
           <>
@@ -1072,6 +1118,7 @@ export default function App() {
             style={{
               backgroundColor: 'var(--app-surface)',
               borderColor: 'var(--app-border)',
+              paddingBottom: 'calc(0.625rem + env(safe-area-inset-bottom))',
             }}
           >
             <div className="flex gap-1.5 overflow-x-auto short:hidden">
@@ -1133,12 +1180,6 @@ export default function App() {
           </>
           )}
 
-          <BottomNav
-            page={page}
-            onChange={(p) => {
-              setPage(p);
-            }}
-          />
         </div>
 
         {/* Slide-Over Locker Drawer */}

@@ -1,6 +1,6 @@
 // The pages under the bottom navigation: Spending, Money in, and Home.
-import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, Gamepad2, House, ShoppingBag, Wallet } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Check, ChevronDown, Gamepad2, House, Menu, ShoppingBag, Wallet } from 'lucide-react';
 import { isNonSpending, resolveTxBasket } from '../game/engine';
 import type { BasketKey, LabelOverride, Transaction } from '../game/types';
 
@@ -402,43 +402,83 @@ export function HomePage({ customerId, transactions }: { customerId: string; tra
 }
 
 // ---------------------------------------------------------------------------
-// Bottom navigation
+// Page menu: one button that opens the list of pages
 // ---------------------------------------------------------------------------
 
-const TABS: { key: PageKey; label: string; icon: typeof House }[] = [
+export const PAGES: { key: PageKey; label: string; icon: typeof House }[] = [
   { key: 'mikko', label: 'Mikko', icon: Gamepad2 },
   { key: 'spending', label: 'Spending', icon: ShoppingBag },
   { key: 'money_in', label: 'Money in', icon: Wallet },
   { key: 'home', label: 'Home', icon: House },
 ];
 
-export function BottomNav({ page, onChange }: { page: PageKey; onChange: (p: PageKey) => void }) {
+export function PageMenu({ page, onChange }: { page: PageKey; onChange: (p: PageKey) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const current = PAGES.find((p) => p.key === page) ?? PAGES[0];
+  const CurrentIcon = current.icon;
+
+  // Close on a tap outside or Escape.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
   return (
-    <nav
-      aria-label="Pages"
-      className="grid grid-cols-4 border-t-2 shrink-0"
-      style={{
-        backgroundColor: 'var(--app-surface)',
-        borderColor: 'var(--app-border)',
-        paddingBottom: 'env(safe-area-inset-bottom)',
-      }}
-    >
-      {TABS.map(({ key, label, icon: Icon }) => {
-        const on = page === key;
-        return (
-          <button
-            key={key}
-            type="button"
-            onClick={() => onChange(key)}
-            aria-current={on ? 'page' : undefined}
-            className="min-h-[48px] flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold cursor-pointer"
-            style={{ color: on ? 'var(--app-accent)' : 'var(--app-text-muted)' }}
-          >
-            <Icon className="w-5 h-5" aria-hidden="true" />
-            <span>{label}</span>
-          </button>
-        );
-      })}
-    </nav>
+    <div ref={ref} className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Page: ${current.label}. Choose a page.`}
+        data-testid="page-menu"
+        className="h-9 pl-2 pr-1.5 flex items-center gap-1 text-xs font-semibold pixel-btn cursor-pointer"
+        style={{ backgroundColor: 'var(--app-surface-muted)', color: 'var(--app-text)' }}
+      >
+        <Menu className="w-4 h-4" aria-hidden="true" />
+        <CurrentIcon className="w-4 h-4 max-[339px]:hidden" aria-hidden="true" />
+        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
+      </button>
+      {open && (
+        <ul
+          role="menu"
+          aria-label="Pages"
+          className="absolute left-0 top-full mt-1 z-50 min-w-[180px] pixel-card py-1"
+        >
+          {PAGES.map(({ key, label, icon: Icon }) => {
+            const on = key === page;
+            return (
+              <li key={key} role="none">
+                <button
+                  type="button"
+                  role="menuitem"
+                  aria-current={on ? 'page' : undefined}
+                  onClick={() => {
+                    setOpen(false);
+                    onChange(key);
+                  }}
+                  className="w-full min-h-[44px] px-3 flex items-center gap-2.5 text-sm font-semibold text-left cursor-pointer hover:bg-[var(--app-surface-muted)]"
+                  style={{ color: on ? 'var(--app-accent)' : 'var(--app-text)' }}
+                >
+                  <Icon className="w-5 h-5" aria-hidden="true" />
+                  <span className="flex-1">{label}</span>
+                  {on && <Check className="w-4 h-4" aria-hidden="true" />}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
   );
 }
