@@ -81,6 +81,8 @@ interface ChatTurn {
 }
 
 const CHAT_KEEP = 12;
+/** Mikko keeps looking for at least this long, even when the answer is already back. */
+const PONDER_MS = 2000;
 
 function storageKey(customerId: string) {
   return `strainer_${customerId}_v1`;
@@ -104,14 +106,36 @@ interface ActiveTurn {
 const COMPARE_OFFER =
   'Curious how you stack up? Statistics Finland knows what other Finns your age spend. Want to compare?';
 
+// #01957 is the demo account that can buy every outfit and card skin.
+const DEMO_CUSTOMER = 'CUST01957';
+const DEMO_XP = 1650;
+const DEMO_COINS = 600;
+const STARTER_XP = 280;
+const STARTER_COINS = 45;
+
+function progressFor(customerId: string, progress: PlayerProgress): PlayerProgress {
+  if (customerId === DEMO_CUSTOMER) {
+    if (progress.xp >= DEMO_XP) return progress;
+    return { ...progress, xp: DEMO_XP, level: levelFromXp(DEMO_XP), coins: Math.max(progress.coins, DEMO_COINS) };
+  }
+  // The boost was briefly saved for every customer. Put an untouched copy back.
+  const starters = ['style_classic_visor', 'theme_spankki', 'card_classic_green'];
+  const untouched =
+    progress.xp === DEMO_XP &&
+    progress.coins === DEMO_COINS &&
+    progress.unlockedItems.length === starters.length &&
+    starters.every((id) => progress.unlockedItems.includes(id));
+  if (!untouched) return progress;
+  return { ...progress, xp: STARTER_XP, level: levelFromXp(STARTER_XP), coins: STARTER_COINS };
+}
+
 function buildInitialState(customerId: string): SavedUserState {
-  const startingXp = 280;
   return {
     forCustomer: customerId,
-    progress: {
-      xp: startingXp,
-      level: levelFromXp(startingXp),
-      coins: 45,
+    progress: progressFor(customerId, {
+      xp: STARTER_XP,
+      level: levelFromXp(STARTER_XP),
+      coins: STARTER_COINS,
       streakWeeks: 0,
       unlockedItems: [
         'style_classic_visor',
@@ -121,7 +145,7 @@ function buildInitialState(customerId: string): SavedUserState {
       equippedStyle: 'classic_visor',
       equippedTheme: 'spankki',
       equippedCardSkin: 'classic_green',
-    },
+    }),
     overrides: [],
     resolvedQuestIds: [],
     pledgedActive: false,
@@ -146,7 +170,7 @@ function loadState(customerId: string): SavedUserState {
         const budgets = (parsed.budgets ?? []).map(sanitizeSavedBudget).filter((b): b is SavedBudget => b !== null);
         const legacy = !parsed.budgets && parsed.budget ? sanitizeBudget(parsed.budget) : null;
         if (legacy) budgets.push({ id: newId(), budget: legacy, createdAt: new Date().toISOString() });
-        return { ...parsed, budgets, budget: undefined, forCustomer: customerId };
+        return { ...parsed, budgets, budget: undefined, forCustomer: customerId, progress: progressFor(customerId, parsed.progress) };
       }
     }
   } catch {
@@ -198,7 +222,7 @@ function saveServerBudgets(customerId: string, budgets: SavedBudget[]) {
   }).catch(() => {});
 }
 
-// XP, coins and Locker items: one record per customer, the newest copy wins.
+// XP, coins and Locker items: one database row per customer, shared by every device.
 // `undefined` means the server can't be reached; `null` means nothing stored yet.
 async function fetchServerProgress(
   customerId: string,
@@ -326,17 +350,25 @@ export default function App() {
     ])
       .then(([data, serverMemory, serverBudgets, serverProgress]) => {
         if (cancel) return;
-        if (serverProgress && (local.progressAt ?? '') <= serverProgress.at) {
-          progressSync.current = { customerId, ready: true, sent: serverProgress.progress };
+        if (serverProgress) {
+          // The account row wins, even when this phone has a newer-looking copy.
+          const progress = progressFor(customerId, serverProgress.progress);
+          progressSync.current = { customerId, ready: true, sent: progress === serverProgress.progress ? progress : null };
           setUserState((prev) =>
             prev && prev.forCustomer === customerId
-              ? { ...prev, progress: serverProgress.progress, progressAt: serverProgress.at }
+              ? { ...prev, progress, progressAt: serverProgress.at }
               : prev,
           );
-        } else {
-          if (serverProgress !== undefined) {
-            saveServerProgress(customerId, local.progress, local.progressAt ?? new Date().toISOString());
+        } else if (serverProgress === null) {
+          const progress = progressFor(customerId, local.progress);
+          saveServerProgress(customerId, progress, new Date().toISOString());
+          progressSync.current = { customerId, ready: true, sent: progress };
+          if (progress !== local.progress) {
+            setUserState((prev) =>
+              prev && prev.forCustomer === customerId ? { ...prev, progress } : prev,
+            );
           }
+        } else {
           progressSync.current = { customerId, ready: true, sent: local.progress };
         }
         if (serverBudgets) {
@@ -561,7 +593,7 @@ export default function App() {
     try {
       const [res] = await Promise.all([
         fetch(`/api/customers/${customerId}/compare`),
-        new Promise((resolve) => window.setTimeout(resolve, 580)),
+        new Promise((resolve) => window.setTimeout(resolve, PONDER_MS)),
       ]);
       const board = await res.json();
       if (!res.ok) throw new Error(board.error || 'No comparison available');
@@ -800,7 +832,7 @@ export default function App() {
             memory: userState.memory ?? [],
           }),
         }),
-        new Promise((resolve) => window.setTimeout(resolve, 680)),
+        new Promise((resolve) => window.setTimeout(resolve, PONDER_MS)),
       ]);
       const answer = await res.json();
       if (!res.ok) throw new Error(answer.error || 'Chat failed');
@@ -1171,6 +1203,7 @@ export default function App() {
                   slipsSharePct={slipsSharePct}
                   streakWeeks={progress.streakWeeks}
                   thinking={asking}
+                  hasQuestion={(!customTurn && Boolean(activeQuest)) || Boolean(customTurn?.offerCompare)}
                   variant="background"
                 />
               </div>
@@ -1188,9 +1221,12 @@ export default function App() {
             </div>
 
             <main
-              className="flex-1 min-h-0 px-3 pt-1.5 pb-2 space-y-1.5 overflow-y-auto"
+              className="flex-1 min-h-0 px-3 pt-1.5 pb-2 overflow-y-auto flex flex-col"
               style={{ backgroundColor: '#6f451f' }}
             >
+              {/* No chart: the message sits on the bottom and grows upward. A chart keeps the old top-down stack. */}
+              {!customTurn?.chart && <div className="flex-1" aria-hidden="true" />}
+              <div className="shrink-0 flex flex-col gap-1.5">
               {levelUpToast && (
                 <div
                   data-testid="level-up-banner"
@@ -1359,6 +1395,7 @@ export default function App() {
 
               </section>
             )}
+              </div>
           </main>
           </div>
 

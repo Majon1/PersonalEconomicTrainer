@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer as createViteServer } from "vite";
 import { answerWithGemini } from "./chat.ts";
+import { refreshBenchmarksIfStale } from "../scripts/fetch-benchmarks.mjs";
 import { buildFinlandBoard } from "./compare.ts";
 import {
   clearBudgets,
@@ -34,7 +35,12 @@ if (existsSync(join(ROOT, ".env"))) process.loadEnvFile(join(ROOT, ".env"));
 const PORT = Number(process.env.PORT || 3000);
 const HOST = "0.0.0.0";
 const pool = createPool();
-const benchmarks = await loadBenchmarks(pool);
+let benchmarks = await loadBenchmarks(pool);
+// The price index and household survey are already in Postgres. Once a day,
+// check whether Statistics Finland has published a newer month or survey year.
+const applyBenchmarks = (next: typeof benchmarks) => { benchmarks = next; };
+refreshBenchmarksIfStale(pool, benchmarks).then(applyBenchmarks);
+setInterval(() => { refreshBenchmarksIfStale(pool, benchmarks).then(applyBenchmarks); }, 60 * 60 * 1000);
 const index = await loadCustomerIndex(pool);
 const customers = new Map();
 
@@ -48,6 +54,21 @@ async function getCustomer(id: string | null | undefined) {
 
 await Promise.all(index.customers.map((customer) => getCustomer(customer.id)));
 
+// Memory and budgets are read on every question and every page load. Keep the
+// demo customers' copies in memory and drop one when it is written.
+const memoryCache = new Map<string, unknown[]>();
+const budgetCache = new Map<string, unknown[]>();
+
+async function cachedMemory(id: string) {
+  if (!memoryCache.has(id)) memoryCache.set(id, await loadMemory(pool, id));
+  return memoryCache.get(id) ?? [];
+}
+
+async function cachedBudgets(id: string) {
+  if (!budgetCache.has(id)) budgetCache.set(id, await loadBudgets(pool, id));
+  return budgetCache.get(id) ?? [];
+}
+
 // Without the tables (no CREATE rights, say) the app still runs; memory,
 // budgets and progress then stay in the browser.
 let userTablesReady = false;
@@ -58,6 +79,16 @@ try {
   console.warn("Memory, budgets and progress stay in the browser: could not create the tables:", error instanceof Error ? error.message : error);
 }
 
+const userDataReady = userTablesReady
+  ? Promise.all(index.customers.map(async (customer) => {
+      try {
+        await Promise.all([cachedMemory(customer.id), cachedBudgets(customer.id)]);
+      } catch (error) {
+        console.warn(`Could not preload ${customer.id}:`, error instanceof Error ? error.message : error);
+      }
+    }))
+  : Promise.resolve();
+
 const app = express();
 app.use(express.json({ limit: "256kb" }));
 
@@ -65,6 +96,7 @@ app.get("/api/status", (_req, res) => {
   res.json({
     ai: Boolean(process.env.GEMINI_API_KEY),
     model: process.env.GEMINI_MODEL || "gemini-4-hydrogen",
+    router: "gemini-decision-1",
   });
 });
 
@@ -104,7 +136,7 @@ app.get("/api/customers/:id/memory", async (req, res) => {
   if (!userTablesReady) return res.status(503).json({ error: "Memory is not stored on the server." });
   if (!(await getCustomer(req.params.id))) return res.status(404).json({ error: "Customer not found" });
   try {
-    res.json({ memory: (await loadMemory(pool, req.params.id)).map(sanitizeMemoryEntry).filter(Boolean) });
+    res.json({ memory: (await cachedMemory(req.params.id)).map(sanitizeMemoryEntry).filter(Boolean) });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Could not load Mikko's memory." });
@@ -119,6 +151,7 @@ app.put("/api/customers/:id/memory", async (req, res) => {
   if (!entries.length) return res.status(400).json({ error: "No valid memory entries." });
   try {
     for (const entry of entries) await saveMemoryEntry(pool, req.params.id, entry);
+    memoryCache.delete(req.params.id);
     res.json({ saved: entries.length });
   } catch (error) {
     console.error(error);
@@ -131,6 +164,7 @@ app.delete("/api/customers/:id/memory", async (req, res) => {
   if (!(await getCustomer(req.params.id))) return res.status(404).json({ error: "Customer not found" });
   try {
     await clearMemory(pool, req.params.id);
+    memoryCache.delete(req.params.id);
     res.json({ cleared: true });
   } catch (error) {
     console.error(error);
@@ -185,7 +219,7 @@ app.get("/api/customers/:id/budgets", async (req, res) => {
   if (!userTablesReady) return res.status(503).json({ error: "Budgets are not stored on the server." });
   if (!(await getCustomer(req.params.id))) return res.status(404).json({ error: "Customer not found" });
   try {
-    res.json({ budgets: (await loadBudgets(pool, req.params.id)).map(sanitizeSavedBudget).filter(Boolean) });
+    res.json({ budgets: (await cachedBudgets(req.params.id)).map(sanitizeSavedBudget).filter(Boolean) });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Could not load budgets." });
@@ -200,6 +234,7 @@ app.put("/api/customers/:id/budgets", async (req, res) => {
   if (!budgets.length) return res.status(400).json({ error: "No valid budgets." });
   try {
     for (const saved of budgets) await saveBudget(pool, req.params.id, saved);
+    budgetCache.delete(req.params.id);
     res.json({ saved: budgets.length });
   } catch (error) {
     console.error(error);
@@ -212,6 +247,7 @@ app.delete("/api/customers/:id/budgets", async (req, res) => {
   if (!(await getCustomer(req.params.id))) return res.status(404).json({ error: "Customer not found" });
   try {
     await clearBudgets(pool, req.params.id);
+    budgetCache.delete(req.params.id);
     res.json({ cleared: true });
   } catch (error) {
     console.error(error);
@@ -230,8 +266,8 @@ app.post("/api/chat", async (req, res) => {
     const id = data.customer.id;
     const [memory, budgets] = userTablesReady
       ? await Promise.all([
-          loadMemory(pool, id).catch(() => body.memory),
-          loadBudgets(pool, id).catch(() => body.budgets),
+          cachedMemory(id).catch(() => body.memory),
+          cachedBudgets(id).catch(() => body.budgets),
         ])
       : [body.memory, body.budgets];
     const answer = await answerWithGemini({
@@ -267,9 +303,11 @@ if (process.env.NODE_ENV === "production" && existsSync(join(ROOT, "dist", "inde
   app.use(vite.middlewares);
 }
 
+await userDataReady;
+
 app.listen(PORT, HOST, () => {
   const model = process.env.GEMINI_MODEL || "gemini-4-hydrogen";
   console.log(`Personal Economic Trainer at http://localhost:${PORT}`);
   if (HOST === "0.0.0.0") console.log(`Also reachable on your network: http://<this computer's IP>:${PORT}`);
-  console.log(process.env.GEMINI_API_KEY ? `Chat uses ${model}` : "No GEMINI_API_KEY: the coach loads, chat stays off");
+  console.log(process.env.GEMINI_API_KEY ? `Chat replies with ${model}; questions are routed by gemini-decision-1` : "No GEMINI_API_KEY: the coach loads, chat stays off");
 });

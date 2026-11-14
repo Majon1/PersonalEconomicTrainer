@@ -10,7 +10,7 @@
   "scripts": {
     "start": "tsx server/server.ts",
     "build": "vite build",
-    "test": "tsx --test src/game/engine.test.ts",
+    "test": "tsx --test src/game/engine.test.ts server/route.test.ts",
     "lint": "tsc --noEmit",
     "fetch:benchmarks": "node scripts/fetch-benchmarks.mjs"
   },

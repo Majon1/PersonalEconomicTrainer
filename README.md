@@ -42,7 +42,7 @@ npm test                 # basket, quest, and what-if checks
 npm run fetch:benchmarks # refresh the Statistics Finland row in Postgres
 ```
 
-`GEMINI_MODEL` defaults to `gemini-4-hydrogen`. `GEMINI_THINKING_LEVEL` defaults to `medium`.
+`GEMINI_MODEL` defaults to `gemini-4-hydrogen` and writes Mikko's reply. `GEMINI_THINKING_LEVEL` defaults to `medium` and applies to a question the router isn't sure about. Routing uses `gemini-decision-1`.
 
 ## How the pieces fit
 
@@ -51,9 +51,10 @@ npm run fetch:benchmarks # refresh the Statistics Finland row in Postgres
 | `src/` | The phone UI: Mikko's room, baskets, dialogue, charts, locker |
 | `src/game/engine.ts` | Baskets, quests, safe-to-spend, and the what-if simulation |
 | `server/db.mjs` | Customers, transactions, and benchmarks from Postgres, plus Mikko's memory (`mikko_memory`) budgets (`mikko_budgets`) and XP (`mikko_progress`) |
-| `server/chat.ts` | Gemini tool loop. Tools compute the numbers; `speak` is the reply |
+| `server/chat.ts` | Answers a question: engine for the topic buttons, decision model plus one short reply otherwise, full tool loop when the route is unsure |
+| `server/decide.ts` | `gemini-decision-1` picks which lookup answers the question |
 | `server/server.ts` | API and the Vite dev server on port 3000 |
-| `scripts/fetch-benchmarks.mjs` | Household Budget Survey 2022 and the consumer price index, from Statistics Finland |
+| `scripts/fetch-benchmarks.mjs` | Household budget survey and the consumer price index, from Statistics Finland |
 
 ### Mikko's memory
 
@@ -65,10 +66,16 @@ Every budget a customer saves is kept in a `mikko_budgets` table. Saving a new o
 
 ### XP and Locker
 
-XP, level, coins and the Locker items a customer bought or equipped are kept in `mikko_progress`, one row per customer. Each change is stamped with the time it happened, and the newest copy wins, so an old tab or browser can't roll XP back. The server checks what it is sent: the level is worked out from the XP, and only real shop items that are unlocked can be equipped.
+XP, level, coins and the Locker items a customer bought or equipped are kept in `mikko_progress`, one row per customer. Every device reads that row, so the level is the same on a phone and on a laptop. A change is saved back to that row. The phone keeps a copy only for when the server can't be reached, and that copy does not overwrite the account. The server checks what it is sent: the level is worked out from the XP, and only real shop items that are unlocked can be equipped. A delayed save from an old tab is ignored when a newer one is already stored.
 
 `mikko_memory`, `mikko_budgets` and `mikko_progress` are the only tables the app writes to; the server creates them on start. If it can't, everything stays in the browser instead. "Reset demo progress" in the Locker clears memory and budgets and resets XP for that customer.
 
 Chat uses the Gemini Interactions API with `store: false`, so the conversation is not kept on Google's side after the answer. The server sends the recent turns again on the next question. Your question and the tool summaries (totals, not the full ledger) are what get sent to the model.
+
+The topic buttons (how am I doing, safe to spend, emergency fund, taxis, junk food, fun) are answered from the engine with no model call. Any other question goes to `gemini-decision-1`, which only chooses the lookup; the engine computes the numbers and `gemini-3.5-flash-lite` writes one short reply. If that choice is unsure, or a purchase has no price written in the question, the full tool loop runs on `GEMINI_MODEL` instead. The charts are the same ones as before. Memory and budgets are kept in memory after the first read, so a question doesn't wait on Postgres for them.
+
+### Statistics Finland
+
+The household budget survey and the consumer price index live in the `benchmarks` row and are loaded once when the server starts. They are not fetched per question. On start, and then hourly, the server asks Statistics Finland whether a newer price-index month or survey year exists, and only downloads when one does. That check happens at most once a day. `npm run fetch:benchmarks` still refreshes the row immediately.
 
 Benchmark source: Statistics Finland, CC BY 4.0. Survey figures are per consumption unit per month and are lifted to recent prices with the consumer price index.

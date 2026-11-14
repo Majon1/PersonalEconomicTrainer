@@ -125,3 +125,41 @@
 .animate-pixel-bob {
   animation: floatBob 1.8s steps(2, end) infinite;
 }
+
+/* Square scrollbars, same hard edges as the cards. Themes recolour them.
+   The standard scrollbar properties draw the rounded system bar, so Chromium
+   uses the classic bar below. Firefox has no classic bar, so it gets the colours only. */
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--app-accent) var(--app-surface-muted);
+  }
+}
+
+*::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--app-surface-muted);
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--app-accent);
+  border: 2px solid var(--app-text);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--app-accent-bright);
+}
+
+*::-webkit-scrollbar-corner {
+  background: var(--app-surface-muted);
+}
+
+*::-webkit-scrollbar-button {
+  width: 0;
+  height: 0;
+  display: none;
+}

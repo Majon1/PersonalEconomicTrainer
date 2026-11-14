@@ -9,6 +9,8 @@ interface PixelMentorSceneProps {
   variant?: 'background' | 'mini';
   /** Open laptop and typing, while Mikko looks something up. */
   thinking?: boolean;
+  /** Yellow question mark. Only when he is actually waiting on an answer. */
+  hasQuestion?: boolean;
 }
 
 export function PixelMentorScene({
@@ -18,6 +20,7 @@ export function PixelMentorScene({
   streakWeeks,
   variant = 'background',
   thinking = false,
+  hasQuestion = false,
 }: PixelMentorSceneProps) {
   const [tick, setTick] = useState(0);
   const [searchPhase, setSearchPhase] = useState<'idle' | 'grabbing' | 'searching'>(
@@ -166,6 +169,7 @@ export function PixelMentorScene({
       data-thinking={thinking ? 'true' : 'false'}
       data-search-phase={searchPhase}
       data-mood={mood}
+      data-question={hasQuestion ? 'true' : 'false'}
       data-style={styleId}
       style={{
         background:
@@ -202,7 +206,7 @@ export function PixelMentorScene({
         <rect x="67" y="21" width="2" height="8" fill={highSlips ? '#c25e00' : '#007a45'} />
 
         {/* Mood Bubble Icon above/right of Mikko */}
-        {mood === 'suspicious' && (
+        {hasQuestion && (
           <g transform={`translate(0, ${stepOdd ? -1 : 0})`}>
             <rect x="53" y="32" width="9" height="10" fill="#112218" />
             <rect x="54" y="33" width="7" height="8" fill="#fef08a" />

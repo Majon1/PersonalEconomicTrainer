@@ -1,6 +1,12 @@
 // Gemini answers as Mikko. Numbers and charts come from the game engine
 // and Statistics Finland benchmarks stored in Postgres. The model never
-// invents a figure: it calls a tool, then speak().
+// invents a figure.
+//
+// A question takes one of three paths, fastest first:
+//   1. A topic-button question is answered from the engine, with no model.
+//   2. gemini-decision-1 picks the lookup, the engine runs it, and one short
+//      reply is written at low thinking.
+//   3. If that pick is unsure, the full tool loop runs as before.
 
 import { GoogleGenAI } from "@google/genai";
 import { SEASONALITY } from "../src/game/seasonality.ts";
@@ -27,9 +33,14 @@ import {
 } from "../src/game/engine.ts";
 import type { Budget, ChartPayload, LabelOverride, MentorMood, SavedBudget, Transaction, WhatIfAsset } from "../src/game/types.ts";
 import { buildFinlandBoard } from "./compare.ts";
+import { decideRoute } from "./decide.ts";
+import { lineFor, scriptedCall, zeroJab } from "./route.ts";
 
 const MODEL = process.env.GEMINI_MODEL || "gemini-4-hydrogen";
 const THINKING = process.env.GEMINI_THINKING_LEVEL || "medium";
+// The routed reply is one short sentence. The small model writes it; the full
+// coach above stays on GEMINI_MODEL for questions the router isn't sure about.
+const REPLY_MODEL = "gemini-3.5-flash-lite";
 
 const MOODS = new Set<MentorMood>([
   "deadpan", "suspicious", "pointing", "bluff_caught", "impressed", "level_up",
@@ -148,6 +159,34 @@ const TOOLS = [
   },
 ];
 
+const SPEAK = `You are Mikko, a deadpan money mentor in a Finnish banking app. Write one to three short sentences and nothing else.
+Quote only numbers from the tool result. At most three figures. Write euros like €38 or €38.50.
+Reply in the language the user wrote in. A chart is already on screen when the result is a series, so don't list every month.
+You run a simulator, not licensed advice: describe a what-if, don't tell them to buy a product. Name Statistics Finland when the result is a peer comparison.
+If the tool result includes sarcasm, add that line after the figure. Don't invent a jab when it isn't there, and never mock rent, health, groceries, or an empty emergency fund.`;
+
+async function speakBrief(
+  client: GoogleGenAI,
+  query: string,
+  history: { role?: string; text?: string }[] | undefined,
+  name: string,
+  result: unknown,
+) {
+  const earlier = (Array.isArray(history) ? history : [])
+    .filter((turn) => turn && typeof turn.text === "string" && turn.text.trim())
+    .slice(-4)
+    .map((turn) => `${turn.role === "mentor" ? "Mikko" : "User"}: ${String(turn.text).trim().slice(0, 300)}`)
+    .join("\n");
+  const interaction = await client.interactions.create({
+    model: REPLY_MODEL,
+    input: `${earlier ? `Earlier:\n${earlier}\n\n` : ""}User: ${query}\n\nTool ${name} returned:\n${JSON.stringify(briefFor(name, result))}`,
+    system_instruction: SPEAK,
+    generation_config: { thinking_level: "minimal" },
+    store: false,
+  });
+  return (interaction.output_text || "").trim();
+}
+
 function round2(n: number) {
   return Math.round(n * 100) / 100;
 }
@@ -198,6 +237,33 @@ function priceFactor(benchmarks: any, today: string) {
   const month = Object.keys(cpi.monthly).filter((key) => key <= today.slice(0, 7)).sort().pop() ?? null;
   if (!month) return { factor: 1, month };
   return { factor: cpi.monthly[month].index / cpi.average2022, month };
+}
+
+function moodFor(name: string, result: any, chart?: ChartPayload): MentorMood {
+  if (name === "check_purchase" && MOODS.has(result?.mood)) return result.mood;
+  if (name === "money_mood" && MOODS.has(result?.mikko_face)) return result.mikko_face;
+  if (chart) return "pointing";
+  return "deadpan";
+}
+
+/** The few figures the reply is allowed to quote. Keeps the seasonal tables out of the prompt. */
+function briefFor(name: string, result: any) {
+  if (name === "seasonal_pattern") {
+    return {
+      your_busiest_month: result.your_busiest_month,
+      finland_busiest_month: result.finland_busiest_month,
+      coming_up: result.coming_up,
+      this_month_season_factor: result.this_month_season_factor,
+      your_quarters: result.your_euros_per_month_by_quarter,
+      finland_note: result.average_finn_euros_per_person_per_month_by_quarter?.note,
+    };
+  }
+  if (name === "spend_series") {
+    const { focus, month, latest_total, latest_count, months } = result;
+    const sarcasm = zeroJab(focus, latest_total);
+    return { focus, month, latest_total, latest_count, months, ...(sarcasm ? { sarcasm } : {}) };
+  }
+  return result;
 }
 
 function argsOf(call: { arguments?: unknown }) {
@@ -381,7 +447,7 @@ export async function answerWithGemini(params: {
       chart = {
         kind: "bar",
         title: `${focus.replaceAll("_", " ")} spend`,
-        subtitle: `${latestMonth} · €${(latest?.value ?? 0).toFixed(2)} across ${latest?.count ?? 0}`,
+        subtitle: `${latestMonth} · €${(latest?.value ?? 0).toFixed(2)}${(latest?.count ?? 0) > 0 ? ` across ${latest?.count}` : ""}`,
         bars: bars.map(({ label, value, highlight }) => ({ label, value, highlight })),
       };
       return { focus, month: latestMonth, latest_total: latest?.value ?? 0, latest_count: latest?.count ?? 0, months: bars };
@@ -448,7 +514,43 @@ export async function answerWithGemini(params: {
     return { error: `Unknown tool ${name}` };
   };
 
+  const reply = (name: string, result: unknown, text: string) => ({
+    text: text || "The numbers are on the chart.",
+    mood: moodFor(name, result, chart),
+    chart,
+  });
+
+  const scripted = scriptedCall(query);
+  if (scripted) {
+    const result = run(scripted.name, scripted.args);
+    console.log(`Answered from the engine (${scripted.name})`);
+    return reply(scripted.name, result, lineFor(scripted.name, result));
+  }
+
   const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+  try {
+    const started = Date.now();
+    const route = await decideRoute(query, Array.isArray(params.history) ? params.history : []);
+    if (route?.name === "none") {
+      return { text: "Ask me about your spending, a bill, a purchase, or how this month is going.", mood: "deadpan" as MentorMood, chart };
+    }
+    if (route) {
+      const result = run(route.name, route.args);
+      let text = "";
+      try {
+        text = await speakBrief(client, query, params.history, route.name, result);
+      } catch (error) {
+        console.warn("Reply used the figures directly:", error instanceof Error ? error.message : error);
+      }
+      console.log(`Answered via ${route.name} in ${Date.now() - started}ms`);
+      return reply(route.name, result, text || lineFor(route.name, result));
+    }
+  } catch (error) {
+    console.warn("Fast route failed, using the full coach:", error instanceof Error ? error.message : error);
+    chart = undefined;
+  }
+
   const prior = (Array.isArray(params.history) ? params.history : [])
     .filter((turn) => turn && typeof turn.text === "string" && turn.text.trim())
     .slice(-8)
@@ -480,6 +582,7 @@ ${remembered.length ? `Already settled with the user (their word stands; never a
 ${remembered.join("\n")}
 ` : ""}Rules:
 - Never invent or estimate a number. Call a tool first, then call speak exactly once.
+- When a treat month (fun, entertainment, junk food, restaurants, taxis) is exactly €0, add one dry jab after the figure. For fun: "You must be fun at parties." Never mock rent, health, groceries, or an empty emergency fund.
 - Quote at most three figures from the tool result. Use euros like €38 or €38.50.
 - If a chart tool ran (spend_series, safe_to_spend, compare_to_finland, what_if, emergency_fund, seasonal_pattern), set mood to pointing.
 - After money_mood (no chart): use its mikko_face as the mood (bluff_caught for angry, suspicious for mild, impressed for happy).
