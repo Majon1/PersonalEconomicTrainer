@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, ShieldCheck } from 'lucide-react';
+import { ChevronDown, ChevronRight, LayoutGrid, X } from 'lucide-react';
 import { BasketsMeter } from './components/BasketsMeter';
 import { FinanceChart } from './components/FinanceChart';
 import { LockerView } from './components/LockerView';
 import { BudgetView } from './components/BudgetView';
 import { FinlandWall, pctVsFinland } from './components/FinlandWall';
-import { HomePage, MoneyInPage, PAGES, PageMenu, SpendingPage, type PageKey } from './components/Pages';
+import { BottomNav, HomePage, MoneyInPage, SpendingPage, type PageKey } from './components/Pages';
 import { PixelMentorScene } from './components/PixelMentorScene';
 import {
   computeBaskets,
@@ -115,12 +115,14 @@ function loadState(customerId: string): SavedUserState {
 
 const QUICK_CHIPS = [
   { label: 'How am I doing?', query: 'How am I doing this month? Why are you in that mood?' },
-  { label: 'This week', query: 'What is safe for me to spend this week?' },
+  { label: 'Safe this week?', query: 'What is safe for me to spend this week?' },
   { label: 'Can I buy it?', query: '' },
+  { label: 'Compare peers', query: 'Compare me to Finnish peers' },
+  { label: 'Emergency fund', query: 'Do I have enough of an emergency fund?' },
+  { label: 'Taxis?', query: 'How much did I spend on taxis last month?' },
   { label: 'Junk food?', query: 'How much did I spend on junk food this month (cafés, fast food, kiosk snacks)?' },
   { label: 'Fun?', query: 'How much did I spend on fun this month (events, hobbies, nights out)?' },
-  { label: 'Fund?', query: 'Do I have enough of an emergency fund?' },
-  { label: 'Peers?', query: 'Compare me to Finnish peers' },
+  { label: 'Seasons', query: '' },
 ];
 
 // Status colours (good / warning / critical), always paired with an icon and label.
@@ -135,11 +137,11 @@ export default function App() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [ledgerReady, setLedgerReady] = useState(false);
   const [asking, setAsking] = useState(false);
-  const [monthOpen, setMonthOpen] = useState(false);
   const [history, setHistory] = useState<{ role: 'user' | 'mentor'; text: string }[]>([]);
   const [userState, setUserState] = useState<SavedUserState | null>(null);
-  const [lockerOpen, setLockerOpen] = useState(false);
   const [budgetOpen, setBudgetOpen] = useState(false);
+  const [overviewOpen, setOverviewOpen] = useState(false);
+  const [topicsOpen, setTopicsOpen] = useState(false);
   const [page, setPage] = useState<PageKey>('mikko');
   const [chatInput, setChatInput] = useState('');
   const [lastShiftedBasket, setLastShiftedBasket] = useState<BasketKey | null>(
@@ -196,6 +198,8 @@ export default function App() {
     setCustomTurn(null);
     setLevelUpToast(null);
     setLockerFeedback(null);
+    setOverviewOpen(false);
+    setTopicsOpen(false);
     fetch(`/api/customers/${customerId}`)
       .then((res) => {
         if (!res.ok) throw new Error('customer');
@@ -329,9 +333,6 @@ export default function App() {
     );
   }
 
-  // XP towards the next level, shown under the balance on every page.
-  const xpInfo = xpProgressInLevel(progress.xp);
-
   // Balance after the latest transaction, shown at the top of every page.
   const latestTx = visibleTxs.reduce<Transaction | null>(
     (a, t) => (!a || `${t.date} ${t.time}` > `${a.date} ${a.time}` ? t : a),
@@ -384,9 +385,15 @@ export default function App() {
   };
 
   const handleCompareYes = async () => {
+    setTopicsOpen(false);
+    setOverviewOpen(false);
+    setAsking(true);
     setCustomTurn({ mood: 'deadpan', text: 'Pulling the Statistics Finland numbers…' });
     try {
-      const res = await fetch(`/api/customers/${customerId}/compare`);
+      const [res] = await Promise.all([
+        fetch(`/api/customers/${customerId}/compare`),
+        new Promise((resolve) => window.setTimeout(resolve, 580)),
+      ]);
       const board = await res.json();
       if (!res.ok) throw new Error(board.error || 'No comparison available');
       const diff = board.yoursTotal - board.finlandTotal;
@@ -408,6 +415,8 @@ export default function App() {
       });
     } catch (error) {
       setCustomTurn({ mood: 'deadpan', text: error instanceof Error ? error.message : 'Could not load the comparison.' });
+    } finally {
+      setAsking(false);
     }
   };
 
@@ -483,7 +492,7 @@ export default function App() {
     setCustomTurn(null);
     setLevelUpToast(null);
     setLockerFeedback(null);
-    setLockerOpen(false);
+    setPage('mikko');
   };
 
   const handleAnswerQuest = (choiceId: string) => {
@@ -583,20 +592,25 @@ export default function App() {
     const trimmed = rawQuery.trim();
     if (!trimmed || asking) return;
     setChatInput('');
+    setTopicsOpen(false);
+    setOverviewOpen(false);
     setAsking(true);
-    setCustomTurn({ mood: 'deadpan', text: 'Checking the ledger…' });
+    setCustomTurn({ mood: 'deadpan', text: 'Checking your ledger…' });
     try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          customerId,
-          query: trimmed,
-          overrides: userState.overrides,
-          budget: userState.budget ?? null,
-          history,
+      const [res] = await Promise.all([
+        fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            customerId,
+            query: trimmed,
+            overrides: userState.overrides,
+            budget: userState.budget ?? null,
+            history,
+          }),
         }),
-      });
+        new Promise((resolve) => window.setTimeout(resolve, 680)),
+      ]);
       const answer = await res.json();
       if (!res.ok) throw new Error(answer.error || 'Chat failed');
       setHistory((prev) => [
@@ -704,7 +718,6 @@ export default function App() {
 
   return (
     <div className="min-h-[100dvh] w-full flex items-center justify-center framed:p-4">
-      {/* Typical Mobile Phone Frame (398x812) */}
       <div
         data-testid="phone-shell"
         className="relative w-full max-w-[560px] framed:w-[398px] h-[100dvh] framed:h-[812px] framed:max-h-[94vh] flex flex-col overflow-hidden framed:border-[3px]"
@@ -714,370 +727,336 @@ export default function App() {
           boxShadow: 'var(--pixel-shadow)',
         }}
       >
-        {/* FOREGROUND HUD LAYER */}
         <div className="relative z-10 flex flex-col h-full">
-          {/* Top S-mobiili Header + Single-Row Baskets */}
+          <div
+            data-testid="test-bar"
+            className="min-h-7 px-3 py-0.5 flex items-center justify-between gap-2 border-b text-[10px] shrink-0"
+            style={{
+              paddingTop: 'env(safe-area-inset-top)',
+              backgroundColor: 'var(--app-surface-muted)',
+              borderColor: 'var(--app-border)',
+            }}
+          >
+            <span className="font-num uppercase tracking-wider text-[var(--app-text-muted)] font-semibold">
+              Test profile
+            </span>
+            <select
+              id="customer-picker"
+              aria-label="Test profile"
+              value={customerId}
+              onChange={(e) => {
+                setLedgerReady(false);
+                setCustomerId(e.target.value);
+                const url = new URL(window.location.href);
+                url.searchParams.set('customer', e.target.value);
+                window.history.replaceState(null, '', url);
+              }}
+              className="font-num text-[11px] font-semibold bg-[var(--app-bg)] border border-[var(--app-border)] px-1.5 py-0.5 cursor-pointer"
+            >
+              {customers.map((c) => (
+                <option key={c.id} value={c.id}>
+                  #{c.id.replace('CUST', '')} · {c.age}y
+                </option>
+              ))}
+            </select>
+          </div>
+
           <header
             className="min-h-11 px-3 flex items-center justify-between gap-2 border-b-2 shrink-0"
             style={{
-              paddingTop: 'env(safe-area-inset-top)',
               backgroundColor: 'var(--app-surface)',
               borderColor: 'var(--app-border)',
             }}
           >
-            <div className="flex items-center gap-1.5 min-w-0">
-              <span className="font-num font-bold text-xs tracking-wider whitespace-nowrap max-[429px]:hidden">
-                S-MOBIILI
-              </span>
-              <label className="sr-only" htmlFor="customer-picker">Customer</label>
-              <select
-                id="customer-picker"
-                value={customerId}
-                onChange={(e) => {
-                  setLedgerReady(false);
-                  setCustomerId(e.target.value);
-                  const url = new URL(window.location.href);
-                  url.searchParams.set('customer', e.target.value);
-                  window.history.replaceState(null, '', url);
-                }}
-                className="max-w-[7.5rem] truncate font-num text-[11px] bg-transparent border border-[var(--app-border)] px-1 py-0.5"
-              >
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.id} · {c.age}
-                  </option>
-                ))}
-              </select>
-              <span className="font-num text-xs font-bold whitespace-nowrap">
-                L{progress.level} · {progress.coins}c
-              </span>
-            </div>
+            <span className="font-num font-bold text-xs tracking-wider whitespace-nowrap">
+              S-MOBIILI
+            </span>
 
-            <div className="flex items-center gap-1.5 shrink-0">
-              <button
-                type="button"
-                onClick={() => {
-                  setLockerOpen(true);
-                }}
-                aria-label="Open Locker"
-                className="h-7 px-2 flex items-center gap-1 text-[11px] font-semibold border border-[var(--app-border)] cursor-pointer"
-                style={{ backgroundColor: 'var(--app-surface-muted)' }}
-              >
-                <ShieldCheck className="w-3.5 h-3.5" />
-                <span className="max-[359px]:sr-only">Locker</span>
-              </button>
-            </div>
+            {(() => {
+              const xpInfo = xpProgressInLevel(progress.xp);
+              return (
+                <div
+                  data-testid="xp-bar"
+                  className="flex items-center gap-2 shrink-0"
+                  aria-label={`Level ${progress.level}, ${xpInfo.currentInLevel} of ${xpInfo.neededForNext} XP, ${progress.coins} coins`}
+                >
+                  <span className="font-num text-xs font-bold whitespace-nowrap">
+                    Lvl {progress.level}
+                  </span>
+                  <div
+                    className="w-20 h-2.5 overflow-hidden"
+                    style={{
+                      backgroundColor: 'var(--app-surface-muted)',
+                      border: '1px solid var(--app-border)',
+                    }}
+                  >
+                    <div
+                      className="h-full transition-all duration-300"
+                      style={{
+                        width: `${xpInfo.pct}%`,
+                        backgroundColor: 'var(--app-accent-bright)',
+                      }}
+                    />
+                  </div>
+                  <span className="font-num text-[11px] font-semibold text-[var(--app-text-muted)] whitespace-nowrap">
+                    {xpInfo.currentInLevel}/{xpInfo.neededForNext} · {progress.coins}c
+                  </span>
+                </div>
+              );
+            })()}
           </header>
 
-          {/* What's on the account right now, on every page */}
           <div
-            className="px-3 py-1 flex items-baseline justify-between gap-2 border-b-2 shrink-0"
+            className="px-3 py-1.5 flex items-center justify-between gap-2 border-b-2 shrink-0"
             style={{ backgroundColor: 'var(--app-surface)', borderColor: 'var(--app-border)' }}
             data-testid="account-balance"
           >
-            <span className="text-[11px] font-semibold text-[var(--app-text-muted)]">
-              On your account · {accountAsOf}
-            </span>
-            <span className="font-num text-base font-bold" style={{ color: accountBalance < 0 ? 'var(--app-danger)' : 'var(--app-text)' }}>
-              {accountBalance < 0 ? '−' : ''}€{Math.abs(accountBalance).toLocaleString('en-IE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </span>
-          </div>
-
-          {/* XP towards the next level, on every page */}
-          <div
-            className="px-3 py-1 flex items-center gap-2 border-b-2 shrink-0"
-            style={{ backgroundColor: 'var(--app-surface)', borderColor: 'var(--app-border)' }}
-            data-testid="xp-bar"
-          >
-            <span className="font-num text-[11px] font-bold shrink-0">Level {xpInfo.level}</span>
-            <div
-              className="flex-1 h-2.5 overflow-hidden"
-              role="progressbar"
-              aria-label={`Level ${xpInfo.level}: ${xpInfo.currentInLevel} of ${xpInfo.neededForNext} XP to level ${xpInfo.level + 1}`}
-              aria-valuemin={0}
-              aria-valuemax={xpInfo.neededForNext}
-              aria-valuenow={xpInfo.currentInLevel}
-              style={{ backgroundColor: 'var(--app-surface-muted)', border: '1px solid var(--app-border)' }}
-            >
-              <div
-                className="h-full transition-all duration-300"
-                style={{ width: `${xpInfo.pct}%`, backgroundColor: 'var(--app-accent-bright)' }}
-              />
+            <div className="flex items-baseline gap-1.5 min-w-0">
+              <span
+                className="font-num text-sm font-bold shrink-0"
+                style={{ color: accountBalance < 0 ? 'var(--app-danger)' : 'var(--app-text)' }}
+              >
+                {accountBalance < 0 ? '−' : ''}€{Math.abs(accountBalance).toLocaleString('en-IE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+              <span className="text-[11px] text-[var(--app-text-muted)] truncate">
+                {page === 'mikko'
+                  ? `· €${baskets.totalSpend.toFixed(0)} spent`
+                  : `· ${accountAsOf}`}
+              </span>
             </div>
-            <span className="font-num text-[11px] text-[var(--app-text-muted)] shrink-0">
-              {xpInfo.currentInLevel}/{xpInfo.neededForNext} XP
-            </span>
+            {page === 'mikko' && (
+              <button
+                type="button"
+                data-testid="overview-toggle"
+                aria-expanded={overviewOpen}
+                onClick={() => setOverviewOpen((o) => !o)}
+                className="px-2 py-0.5 flex items-center gap-1.5 text-[11px] font-semibold cursor-pointer shrink-0 border border-[var(--app-border)]"
+                style={{ backgroundColor: overviewOpen ? 'var(--app-bg)' : 'var(--app-surface-muted)' }}
+              >
+                <span className="flex items-center gap-0.5" aria-hidden="true">
+                  <i className="w-1.5 h-1.5 inline-block" style={{ backgroundColor: '#007a45' }} />
+                  <i className="w-1.5 h-1.5 inline-block" style={{ backgroundColor: '#2563eb' }} />
+                  <i className="w-1.5 h-1.5 inline-block" style={{ backgroundColor: '#c25e00' }} />
+                  <i className="w-1.5 h-1.5 inline-block" style={{ backgroundColor: '#7c3aed' }} />
+                </span>
+                <span>Overview</span>
+                <ChevronDown className={`w-3 h-3 transition-transform ${overviewOpen ? 'rotate-180' : ''}`} />
+              </button>
+            )}
           </div>
 
           {page !== 'mikko' ? (
-            <>
-              {/* Page menu + the page's name */}
-              <div
-                className="relative z-20 min-h-11 pl-3 pr-3 py-1 flex items-center gap-3 border-b-2 shrink-0"
-                style={{ backgroundColor: 'var(--app-surface)', borderColor: 'var(--app-border)' }}
-              >
-                <PageMenu page={page} onChange={setPage} />
-                <span className="text-sm font-semibold truncate">{PAGES.find((p) => p.key === page)?.label}</span>
-              </div>
-              <div className="flex-1 min-h-0 overflow-y-auto" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
-                {page === 'spending' && <SpendingPage transactions={visibleTxs} overrides={userState.overrides} />}
-                {page === 'money_in' && <MoneyInPage transactions={visibleTxs} />}
-                {page === 'home' && <HomePage customerId={customerId} transactions={visibleTxs} />}
-              </div>
-            </>
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              {page === 'spending' && <SpendingPage transactions={visibleTxs} overrides={userState.overrides} />}
+              {page === 'money_in' && <MoneyInPage transactions={visibleTxs} />}
+              {page === 'home' && <HomePage customerId={customerId} transactions={visibleTxs} />}
+              {page === 'locker' && (
+                <LockerView
+                  embedded
+                  progress={progress}
+                  holderName="S-ASIAKAS"
+                  slipsSharePct={slipsSharePct}
+                  onSelectShopItem={handleSelectShopItem}
+                  onResetDemo={handleResetDemo}
+                  feedbackMsg={lockerFeedback}
+                />
+              )}
+            </div>
           ) : (
           <>
-          {/* Page menu, then "This month" (tap to open the month's details) */}
-          <div
-            className="relative z-20 min-h-11 pl-3 flex items-center border-b-2 shrink-0"
-            style={{ backgroundColor: 'var(--app-surface)', borderColor: 'var(--app-border)' }}
-          >
-            <PageMenu page={page} onChange={setPage} />
-            <button
-              type="button"
-              onClick={() => setMonthOpen((open) => !open)}
-              aria-expanded={monthOpen}
-              className="flex-1 min-w-0 self-stretch pl-3 pr-3 py-2 flex items-center justify-between gap-2 text-left cursor-pointer"
-            >
-              <span className="min-w-0">
-                <span className="block text-[11px] font-semibold text-[var(--app-text-muted)]">This month</span>
-                <span className="block text-sm font-semibold truncate">{MOOD_LABEL[moneyMood.level]}</span>
-              </span>
-              <span className="flex items-center gap-2 shrink-0">
-                <span className="font-num text-xs font-bold">
-                  Fund {Math.min(99, moneyMood.emergency.monthsCovered).toFixed(1)}/{moneyMood.emergency.goalMonths}
-                </span>
-                <ChevronDown className={`w-4 h-4 transition-transform ${monthOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
-              </span>
-            </button>
-          </div>
-
-          {monthOpen && (
-          <>
-          <BasketsMeter
-            baskets={baskets}
-            monthKey={latestMonth}
-            lastShiftedBasket={lastShiftedBasket}
-          />
-
-          {/* Money mood + emergency fund: tap for Mikko's take */}
-          <div
-            className="grid grid-cols-2 gap-1 px-2 py-1.5 short:py-1 border-b-2 shrink-0"
-            style={{ backgroundColor: 'var(--app-surface)', borderColor: 'var(--app-border)' }}
-          >
-            <button
-              type="button"
-              data-testid="money-mood"
-              onClick={handleShowMood}
-              className="px-1.5 py-1 flex items-center gap-1.5 min-w-0 text-left cursor-pointer"
-              style={{ backgroundColor: 'var(--app-surface-muted)', border: `1px solid ${MOOD_COLOR[moneyMood.level]}` }}
-              aria-label={`Money mood ${moneyMood.level}, score ${moneyMood.score} of 100. Tap for details.`}
-            >
-              <span
-                className="w-4 h-4 shrink-0 grid place-items-center text-[10px] font-bold text-white"
-                style={{ backgroundColor: MOOD_COLOR[moneyMood.level] }}
-                aria-hidden="true"
+          <div className="relative flex-1 min-h-0 flex flex-col">
+            {overviewOpen && (
+              <div
+                data-testid="overview-panel"
+                className="absolute top-0 left-0 right-0 z-30 shadow-md"
               >
-                {moneyMood.level === 'happy' ? '✓' : moneyMood.level === 'mild' ? '–' : '!'}
-              </span>
-              <span className="text-[11px] font-semibold truncate">{MOOD_LABEL[moneyMood.level]}</span>
-              <span className="font-num text-[11px] font-bold ml-auto shrink-0">{moneyMood.score}</span>
-            </button>
-            <button
-              type="button"
-              data-testid="emergency-fund"
-              onClick={handleShowEmergencyFund}
-              className="px-1.5 py-1 min-w-0 text-left cursor-pointer"
-              style={{ backgroundColor: 'var(--app-surface-muted)', border: '1px solid var(--app-border)' }}
-              aria-label={`Emergency fund ${moneyMood.emergency.monthsCovered.toFixed(1)} of ${moneyMood.emergency.goalMonths} months. Tap for details.`}
-            >
-              <div className="flex items-center justify-between gap-1">
-                <span className="text-[11px] font-semibold truncate"><span className="max-[319px]:hidden">Emergency fund</span><span className="min-[320px]:hidden">Fund</span></span>
-                <span className="font-num text-[11px] font-bold shrink-0">
-                  {Math.min(99, moneyMood.emergency.monthsCovered).toFixed(1)}/{moneyMood.emergency.goalMonths} mo
-                </span>
-              </div>
-              <div className="h-1.5 mt-0.5" style={{ backgroundColor: 'var(--app-surface)', border: '1px solid var(--app-border)' }}>
-                <div
-                  className="h-full"
-                  style={{
-                    width: `${moneyMood.emergency.progressPct}%`,
-                    backgroundColor: EF_COLOR[moneyMood.emergency.status],
-                  }}
+                <BasketsMeter
+                  baskets={baskets}
+                  monthKey={latestMonth}
+                  lastShiftedBasket={lastShiftedBasket}
                 />
-              </div>
-            </button>
-          </div>
 
-          {/* Budget: what's left this month. Tap to set, edit, or check a purchase. */}
-          <button
-            type="button"
-            data-testid="budget-bar"
-            onClick={() => {
-              setBudgetOpen(true);
-            }}
-            className="px-2 py-1 border-b-2 shrink-0 text-left cursor-pointer"
-            style={{ backgroundColor: 'var(--app-surface)', borderColor: 'var(--app-border)' }}
-            aria-label={budgetStatus ? 'Budget this month. Tap to edit or check a purchase.' : 'Set a monthly budget'}
-          >
-            {budgetStatus && budgetStatus.lines.length ? (
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-[11px] font-semibold shrink-0">Budget</span>
-                {budgetStatus.lines.slice(0, 2).map((l) => (
-                  <span key={l.key} className="flex-1 min-w-0">
-                    <span className="flex justify-between gap-1 text-[10px]">
-                      <span className="truncate">{l.key === 'nice_to_have' ? 'Nice' : l.label}</span>
-                      <span className="font-num font-bold shrink-0">€{Math.max(0, l.left).toFixed(0)} left</span>
+                <div
+                  className="grid grid-cols-[1fr_1fr_auto] gap-1 px-2 py-1 short:hidden border-b"
+                  style={{ backgroundColor: 'var(--app-surface)', borderColor: 'var(--app-border)' }}
+                >
+                  <button
+                    type="button"
+                    data-testid="money-mood"
+                    onClick={() => {
+                      setOverviewOpen(false);
+                      handleShowMood();
+                    }}
+                    className="px-1.5 py-1 flex items-center gap-1 min-w-0 text-left cursor-pointer"
+                    style={{ backgroundColor: 'var(--app-surface-muted)', border: `1px solid ${MOOD_COLOR[moneyMood.level]}` }}
+                    aria-label={`Money mood ${moneyMood.level}, score ${moneyMood.score} of 100. Tap for details.`}
+                  >
+                    <span
+                      className="w-3.5 h-3.5 shrink-0 grid place-items-center text-[9px] font-bold text-white"
+                      style={{ backgroundColor: MOOD_COLOR[moneyMood.level] }}
+                      aria-hidden="true"
+                    >
+                      {moneyMood.level === 'happy' ? '✓' : moneyMood.level === 'mild' ? '–' : '!'}
                     </span>
-                    <span className="block h-1.5" style={{ backgroundColor: 'var(--app-surface-muted)', border: '1px solid var(--app-border)' }}>
-                      <span
-                        className="block h-full"
+                    <span className="text-[10px] font-semibold truncate">{MOOD_LABEL[moneyMood.level]}</span>
+                    <span className="font-num text-[10px] font-bold ml-auto shrink-0">{moneyMood.score}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    data-testid="emergency-fund"
+                    onClick={() => {
+                      setOverviewOpen(false);
+                      handleShowEmergencyFund();
+                    }}
+                    className="px-1.5 py-1 min-w-0 text-left cursor-pointer"
+                    style={{ backgroundColor: 'var(--app-surface-muted)', border: '1px solid var(--app-border)' }}
+                    aria-label={`Emergency fund ${moneyMood.emergency.monthsCovered.toFixed(1)} of ${moneyMood.emergency.goalMonths} months. Tap for details.`}
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-[10px] font-semibold truncate">Fund</span>
+                      <span className="font-num text-[10px] font-bold shrink-0">
+                        {Math.min(99, moneyMood.emergency.monthsCovered).toFixed(1)}/{moneyMood.emergency.goalMonths} mo
+                      </span>
+                    </div>
+                    <div className="h-1 mt-0.5" style={{ backgroundColor: 'var(--app-surface)', border: '1px solid var(--app-border)' }}>
+                      <div
+                        className="h-full"
                         style={{
-                          width: `${Math.min(100, l.pct)}%`,
-                          backgroundColor: l.status === 'over' ? '#b91c1c' : l.status === 'close' ? '#d97706' : '#15803d',
+                          width: `${moneyMood.emergency.progressPct}%`,
+                          backgroundColor: EF_COLOR[moneyMood.emergency.status],
                         }}
                       />
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    data-testid="budget-bar"
+                    onClick={() => {
+                      setOverviewOpen(false);
+                      setBudgetOpen(true);
+                    }}
+                    className="px-2 py-1 flex items-center gap-1 text-[10px] font-semibold cursor-pointer shrink-0"
+                    style={{ backgroundColor: 'var(--app-surface-muted)', border: '1px solid var(--app-border)' }}
+                    aria-label={budgetStatus ? 'Budget this month. Tap to edit or check a purchase.' : 'Set a monthly budget'}
+                  >
+                    <span>
+                      {budgetStatus?.worst
+                        ? `€${Math.max(0, budgetStatus.worst.left).toFixed(0)} left`
+                        : 'Budget'}
                     </span>
-                  </span>
-                ))}
-                <ChevronRight className="w-3.5 h-3.5 shrink-0" />
-              </div>
-            ) : (
-              <div className="flex items-center justify-between text-[11px] font-semibold">
-                <span>Set a monthly budget, and Mikko keeps you on it</span>
-                <ChevronRight className="w-3.5 h-3.5 shrink-0" />
-              </div>
-            )}
-          </button>
-
-          {/* Always-available ways to Statistics Finland: the board and the seasons */}
-          <div
-            className="grid grid-cols-2 gap-1 px-2 py-1.5 border-b-2 shrink-0"
-            style={{ backgroundColor: 'var(--app-surface)', borderColor: 'var(--app-border)' }}
-          >
-            <button
-              type="button"
-              onClick={() => {
-                setMonthOpen(false);
-                void handleCompareYes();
-              }}
-              data-testid="open-finland"
-              className="min-h-[36px] px-2 text-[11px] font-semibold pixel-btn cursor-pointer flex items-center justify-between gap-1"
-              style={{ backgroundColor: 'var(--app-surface-muted)', color: 'var(--app-text)' }}
-            >
-              <span>You vs Finland</span>
-              <ChevronRight className="w-3.5 h-3.5 shrink-0" />
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMonthOpen(false);
-                handleShowSeasons();
-              }}
-              data-testid="open-seasons"
-              className="min-h-[36px] px-2 text-[11px] font-semibold pixel-btn cursor-pointer flex items-center justify-between gap-1"
-              style={{ backgroundColor: 'var(--app-surface-muted)', color: 'var(--app-text)' }}
-            >
-              <span>Seasons{seasonAhead ? `: ${seasonAhead.title}` : ''}</span>
-              <ChevronRight className="w-3.5 h-3.5 shrink-0" />
-            </button>
-          </div>
-          </>
-          )}
-
-          {/* OPEN STAGE WINDOW: Mikko's room, anchored to the desk edge */}
-          <div className="relative flex-[1.6] min-h-[220px] short:min-h-[148px] short:flex-none">
-            <div aria-hidden="true">
-              <PixelMentorScene
-                mood={activeMood}
-                styleId={progress.equippedStyle}
-                slipsSharePct={slipsSharePct}
-                streakWeeks={progress.streakWeeks}
-                thinking={asking}
-                variant="background"
-              />
-            </div>
-            {/* You vs Finland, pinned to the wall around Mikko */}
-            {customTurn?.chart?.kind === 'finland_board' && (
-              <FinlandWall
-                board={customTurn.chart}
-                picked={customTurn.pick}
-                onPick={handlePickCategory}
-                onSeasons={handleShowSeasons}
-                onClose={() => {
-                  setCustomTurn(null);
-                }}
-              />
-            )}
-          </div>
-
-          {/* LOWER FLOATING RPG DIALOGUE OR CHART ZONE OVER DESK */}
-          <main
-            className="px-3 pt-1.5 pb-2 space-y-1.5 min-h-0 shrink overflow-y-auto short:flex-1"
-            style={{ backgroundColor: '#6f451f' }}
-          >
-            {levelUpToast && (
-              <div
-                data-testid="level-up-banner"
-                className="px-2.5 py-1 text-[11px] font-semibold flex items-center justify-between gap-2 border-2"
-                style={{
-                  backgroundColor: 'var(--app-accent)',
-                  color: 'var(--app-accent-fg)',
-                  borderColor: 'var(--app-border)',
-                }}
-              >
-                <span>{levelUpToast}</span>
+                    <ChevronRight className="w-3 h-3 shrink-0" />
+                  </button>
+                </div>
                 <button
                   type="button"
+                  data-testid="open-seasons"
                   onClick={() => {
-                    setLevelUpToast(null);
-                    setLockerOpen(true);
+                    setOverviewOpen(false);
+                    handleShowSeasons();
                   }}
-                  className="underline shrink-0 cursor-pointer"
+                  className="w-full px-2 py-1 flex items-center justify-between gap-2 text-[10px] font-semibold border-b-2 cursor-pointer"
+                  style={{ backgroundColor: 'var(--app-surface)', borderColor: 'var(--app-border)' }}
                 >
-                  Locker
+                  <span>Seasons{seasonAhead ? `: ${seasonAhead.title}` : ''}</span>
+                  <ChevronRight className="w-3 h-3 shrink-0" />
                 </button>
               </div>
             )}
-            {customTurn?.chart ? (
-              <div className="space-y-1.5">
+
+            <div className="relative h-[296px] shrink-0 short:h-[140px]">
+              <div aria-hidden="true">
+                <PixelMentorScene
+                  mood={activeMood}
+                  styleId={progress.equippedStyle}
+                  slipsSharePct={slipsSharePct}
+                  streakWeeks={progress.streakWeeks}
+                  thinking={asking}
+                  variant="background"
+                />
+              </div>
+              {customTurn?.chart?.kind === 'finland_board' && (
+                <FinlandWall
+                  board={customTurn.chart}
+                  picked={customTurn.pick}
+                  onPick={handlePickCategory}
+                  onSeasons={handleShowSeasons}
+                  onClose={() => {
+                    setCustomTurn(null);
+                  }}
+                />
+              )}
+            </div>
+
+            <main
+              className="flex-1 min-h-0 px-3 pt-1.5 pb-2 space-y-1.5 overflow-y-auto"
+              style={{ backgroundColor: '#6f451f' }}
+            >
+              {levelUpToast && (
                 <div
-                  data-testid="mentor-speech"
-                  className="pixel-card px-3 py-2 text-xs leading-snug font-medium flex items-start justify-between gap-2"
+                  data-testid="level-up-banner"
+                  className="px-2.5 py-1 text-[11px] font-semibold flex items-center justify-between gap-2 border-2"
+                  style={{
+                    backgroundColor: 'var(--app-accent)',
+                    color: 'var(--app-accent-fg)',
+                    borderColor: 'var(--app-border)',
+                  }}
                 >
-                  <span>
-                    <strong className="font-num">Mikko:</strong> {activeSpeech}
-                  </span>
+                  <span>{levelUpToast}</span>
                   <button
                     type="button"
-                    onClick={() => setCustomTurn(null)}
-                    className="text-[11px] font-semibold underline shrink-0 cursor-pointer text-[var(--app-text-muted)] hover:text-[var(--app-text)]"
+                    onClick={() => {
+                      setLevelUpToast(null);
+                      setPage('locker');
+                    }}
+                    className="underline shrink-0 cursor-pointer"
                   >
-                    {activeQuest ? 'Next' : 'Close'}
+                    Locker
                   </button>
                 </div>
-                {/* The Finland board lives on the wall; only short (landscape) screens, where the room is hidden, show it as a table here */}
-                <div className={customTurn.chart.kind === 'finland_board' ? 'hidden short:block' : ''}>
-                  <FinanceChart
-                    chart={customTurn.chart}
-                    onChangeWhatIfAsset={handleChangeWhatIfAsset}
-                    onChangeWhatIfMonths={handleChangeWhatIfMonths}
-                    onPledgeCutback={handlePledgeCutback}
-                    pledgedActive={userState.pledgedActive}
-                  />
+              )}
+              {customTurn?.chart ? (
+                <div className="space-y-1.5">
+                  <div
+                    data-testid="mentor-speech"
+                    className="pixel-card px-3 py-2 text-xs leading-snug font-medium flex items-start justify-between gap-2"
+                  >
+                    <span>
+                      <strong className="font-num">Mikko:</strong> {activeSpeech}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setCustomTurn(null)}
+                      className="text-[11px] font-semibold underline shrink-0 cursor-pointer text-[var(--app-text-muted)] hover:text-[var(--app-text)]"
+                    >
+                      {activeQuest ? 'Next' : 'Close'}
+                    </button>
+                  </div>
+                  <div className={customTurn.chart.kind === 'finland_board' ? 'hidden short:block' : ''}>
+                    <FinanceChart
+                      chart={customTurn.chart}
+                      onChangeWhatIfAsset={handleChangeWhatIfAsset}
+                      onChangeWhatIfMonths={handleChangeWhatIfMonths}
+                      onPledgeCutback={handlePledgeCutback}
+                      pledgedActive={userState.pledgedActive}
+                    />
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <section
-                aria-label="Mikko Dialogue"
-                className="pixel-card p-3 space-y-2.5"
-              >
+              ) : (
+                <section
+                  aria-label="Mikko Dialogue"
+                  className="pixel-card p-3 space-y-2"
+                >
+                  <div className="font-num font-bold text-xs tracking-wide">
+                    Mikko · Money Coach
+                  </div>
+
                 <p
                   data-testid="mentor-speech"
-                  className="text-sm leading-relaxed font-medium"
+                  className="text-xs leading-relaxed font-medium"
                 >
-                  <span className="font-num font-bold">Mikko. </span>
-                  {asking ? 'One moment. I am looking through your numbers.' : activeSpeech}
+                  {asking ? 'Grabbing my notes… checking your numbers.' : activeSpeech}
                 </p>
 
                 {customTurn?.offerWhatIf && (
@@ -1113,10 +1092,10 @@ export default function App() {
                     <button
                       type="button"
                       onClick={handleCompareYes}
-                      className="min-h-[40px] px-3 text-xs font-semibold pixel-btn cursor-pointer flex items-center justify-center gap-1"
+                      className="min-h-[38px] px-3 text-xs font-semibold pixel-btn cursor-pointer flex items-center justify-center gap-1"
                       style={{ backgroundColor: 'var(--app-accent)', color: 'var(--app-accent-fg)' }}
                     >
-                      <span>Yes, show me</span>
+                      <span>Compare to Finland</span>
                       <ChevronRight className="w-3.5 h-3.5" />
                     </button>
                     <button
@@ -1124,15 +1103,14 @@ export default function App() {
                       onClick={() => {
                         setCustomTurn(null);
                       }}
-                      className="min-h-[40px] px-3 text-xs font-semibold pixel-btn cursor-pointer"
+                      className="min-h-[38px] px-3 text-xs font-semibold pixel-btn cursor-pointer"
                       style={{ backgroundColor: 'var(--app-surface-muted)', color: 'var(--app-text)' }}
                     >
-                      Not now
+                      {activeQuest ? 'Check Spend (+XP)' : 'Ask a Question'}
                     </button>
                   </div>
                 )}
 
-                {/* Quest answers only when Mikko is asking the quest, not under another message */}
                 {!customTurn && activeQuest && (
                   <div className="space-y-1.5" data-testid="suspicion-quest">
                     {activeQuest.choices.map((ch) => (
@@ -1174,39 +1152,63 @@ export default function App() {
               </section>
             )}
           </main>
+          </div>
 
-          {/* Minimal Ask Mikko Bar */}
           <footer
-            className="p-2.5 border-t-2 space-y-1.5 shrink-0"
+            className="relative p-2 border-t-2 shrink-0"
             style={{
               backgroundColor: 'var(--app-surface)',
               borderColor: 'var(--app-border)',
-              paddingBottom: 'calc(0.625rem + env(safe-area-inset-bottom))',
             }}
           >
-            <div className="flex gap-1.5 overflow-x-auto short:hidden">
-              {QUICK_CHIPS.slice(0, 3).map((chip) => (
-                <button
-                  key={chip.label}
-                  type="button"
-                  onClick={() =>
-                    chip.label === 'Peers?'
-                      ? handleCompareYes()
-                      : chip.label === 'Can I buy it?'
-                        ? setBudgetOpen(true)
-                        : handleSendQuery(chip.query)
-                  }
-                  disabled={asking}
-                  className="px-2 py-1 text-[11px] font-semibold pixel-btn cursor-pointer whitespace-nowrap shrink-0"
-                  style={{
-                    backgroundColor: 'var(--app-surface-muted)',
-                    color: 'var(--app-text)',
-                  }}
-                >
-                  {chip.label}
-                </button>
-              ))}
-            </div>
+            {topicsOpen && (
+              <div
+                data-testid="topics-menu"
+                className="absolute left-2 right-2 bottom-full mb-1.5 pixel-card p-2.5 space-y-2 z-20"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-num text-[11px] font-bold uppercase tracking-wide">
+                    Quick prompts
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setTopicsOpen(false)}
+                    aria-label="Close quick prompts"
+                    className="p-0.5 cursor-pointer text-[var(--app-text-muted)] hover:text-[var(--app-text)]"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {QUICK_CHIPS.map((chip) => (
+                    <button
+                      key={chip.label}
+                      type="button"
+                      onClick={() => {
+                        setTopicsOpen(false);
+                        if (chip.label === 'Compare peers') {
+                          handleCompareYes();
+                        } else if (chip.label === 'Can I buy it?') {
+                          setBudgetOpen(true);
+                        } else if (chip.label === 'Seasons') {
+                          handleShowSeasons();
+                        } else {
+                          handleSendQuery(chip.query);
+                        }
+                      }}
+                      disabled={asking}
+                      className="px-2.5 py-2 text-left text-[11px] font-semibold pixel-btn cursor-pointer truncate"
+                      style={{
+                        backgroundColor: 'var(--app-surface-muted)',
+                        color: 'var(--app-text)',
+                      }}
+                    >
+                      {chip.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <form
               onSubmit={(e) => {
@@ -1215,6 +1217,22 @@ export default function App() {
               }}
               className="flex gap-1.5"
             >
+              <button
+                type="button"
+                data-testid="topics-toggle"
+                onClick={() => setTopicsOpen((o) => !o)}
+                aria-expanded={topicsOpen}
+                aria-label="Quick prompts"
+                title="Quick prompts"
+                disabled={asking}
+                className="min-h-[38px] px-2.5 flex items-center justify-center pixel-btn cursor-pointer shrink-0"
+                style={{
+                  backgroundColor: topicsOpen ? 'var(--app-bg)' : 'var(--app-surface-muted)',
+                  color: 'var(--app-text)',
+                }}
+              >
+                <LayoutGrid className="w-4 h-4" />
+              </button>
               <label htmlFor="coach-input" className="sr-only">
                 Ask Mikko
               </label>
@@ -1243,9 +1261,16 @@ export default function App() {
           </>
           )}
 
+          <BottomNav
+            page={page}
+            onChange={(p) => {
+              setOverviewOpen(false);
+              setTopicsOpen(false);
+              setPage(p);
+            }}
+          />
         </div>
 
-        {/* Slide-Over Locker Drawer */}
         {budgetOpen && (
           <BudgetView
             budget={budget}
@@ -1256,19 +1281,8 @@ export default function App() {
             onClose={() => setBudgetOpen(false)}
           />
         )}
-
-        {lockerOpen && (
-          <LockerView
-            progress={progress}
-            holderName="S-ASIAKAS"
-            slipsSharePct={slipsSharePct}
-            onSelectShopItem={handleSelectShopItem}
-            onClose={() => setLockerOpen(false)}
-            onResetDemo={handleResetDemo}
-            feedbackMsg={lockerFeedback}
-          />
-        )}
       </div>
     </div>
   );
 }
+

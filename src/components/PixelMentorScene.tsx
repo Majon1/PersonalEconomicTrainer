@@ -20,6 +20,10 @@ export function PixelMentorScene({
   thinking = false,
 }: PixelMentorSceneProps) {
   const [tick, setTick] = useState(0);
+  const [searchPhase, setSearchPhase] = useState<'idle' | 'grabbing' | 'searching'>(
+    thinking ? 'searching' : 'idle',
+  );
+  const [grabStep, setGrabStep] = useState<0 | 1>(0);
 
   useEffect(() => {
     if (
@@ -34,9 +38,32 @@ export function PixelMentorScene({
     return () => window.clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    if (!thinking) {
+      setSearchPhase('idle');
+      setGrabStep(0);
+      return;
+    }
+    const reduced =
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduced) {
+      setSearchPhase('searching');
+      return;
+    }
+    setSearchPhase('grabbing');
+    setGrabStep(0);
+    const t1 = window.setTimeout(() => setGrabStep(1), 160);
+    const t2 = window.setTimeout(() => setSearchPhase('searching'), 340);
+    return () => {
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+    };
+  }, [thinking]);
+
   const highSlips = slipsSharePct >= 22;
   const stepOdd = tick % 2 === 1;
-  const isBlinking = mood === 'deadpan' && tick === 7;
+  const isBlinking = mood === 'deadpan' && tick === 7 && searchPhase === 'idle';
 
   const coatColor =
     styleId === 'detective_coat'
@@ -59,7 +86,13 @@ export function PixelMentorScene({
   let headX = 0;
   let headY = 0;
 
-  if (mood === 'deadpan') {
+  if (searchPhase === 'grabbing') {
+    bodyX = grabStep === 0 ? 3 : 1;
+    headX = grabStep === 0 ? 2 : 1;
+  } else if (searchPhase === 'searching') {
+    headY = 1;
+    headX = stepOdd ? 0 : -1;
+  } else if (mood === 'deadpan') {
     headY = tick % 4 === 2 ? 1 : 0;
   } else if (mood === 'suspicious') {
     bodyY = stepOdd ? 0 : 1;
@@ -74,10 +107,18 @@ export function PixelMentorScene({
     headY = stepOdd ? -2 : 0;
   }
 
-  const eyeDirX = mood === 'suspicious' ? (tick % 4 < 2 ? 0 : 1) : 0;
+  const eyeDirX =
+    searchPhase === 'grabbing'
+      ? 1
+      : searchPhase === 'searching'
+        ? tick % 2
+        : mood === 'suspicious'
+          ? tick % 4 < 2
+            ? 0
+            : 1
+          : 0;
   let eyeDirY = mood === 'pointing' ? 1 : 0;
-  if (thinking) {
-    headY += 2;
+  if (searchPhase === 'searching') {
     eyeDirY = 1;
   }
 
@@ -123,6 +164,7 @@ export function PixelMentorScene({
       className="absolute inset-0 pointer-events-none select-none overflow-hidden"
       data-testid="pixel-mentor"
       data-thinking={thinking ? 'true' : 'false'}
+      data-search-phase={searchPhase}
       data-mood={mood}
       data-style={styleId}
       style={{
@@ -136,7 +178,7 @@ export function PixelMentorScene({
         shapeRendering="crispEdges"
         className="w-full h-full pixel-crisp"
         role="img"
-        aria-label={`Mikko the financial coach (${mood}${thinking ? ', typing on a laptop' : ''})`}
+        aria-label={`Mikko the financial coach (${mood}${searchPhase === 'grabbing' ? ', grabbing laptop' : searchPhase === 'searching' ? ', searching on tilted laptop' : ''})`}
       >
         {/* Wall & Wainscoting */}
         <rect x="0" y="0" width="80" height="72" fill="#d7e5dc" />
@@ -200,15 +242,34 @@ export function PixelMentorScene({
             </>
           )}
 
-          {/* Arms per Pose. Typing replaces them while he searches. */}
-          {thinking && (
+          {/* Arms per Pose. Grab or type while he searches. */}
+          {searchPhase === 'grabbing' && (
             <>
-              <rect x="26" y="50" width="8" height="6" fill={coatColor} />
-              <rect x="46" y="50" width="8" height="6" fill={coatColor} />
+              <rect
+                x={grabStep === 0 ? 49 : 46}
+                y={grabStep === 0 ? 51 : 52}
+                width={grabStep === 0 ? 9 : 7}
+                height="4"
+                fill={coatColor}
+              />
+              <rect
+                x={grabStep === 0 ? 57 : 51}
+                y={grabStep === 0 ? 53 : 54}
+                width="4"
+                height="4"
+                fill="#f3cbb1"
+              />
             </>
           )}
 
-          {!thinking && (mood === 'impressed' || mood === 'level_up') && (
+          {searchPhase === 'searching' && (
+            <>
+              <rect x="26" y="52" width="7" height="6" fill={coatColor} />
+              <rect x="47" y="52" width="7" height="6" fill={coatColor} />
+            </>
+          )}
+
+          {searchPhase === 'idle' && (mood === 'impressed' || mood === 'level_up') && (
             <>
               <rect x="24" y={stepOdd ? 35 : 38} width="5" height="14" fill={coatColor} />
               <rect x="24" y={stepOdd ? 32 : 35} width="5" height="3" fill="#f3cbb1" />
@@ -217,7 +278,7 @@ export function PixelMentorScene({
             </>
           )}
 
-          {!thinking && mood === 'bluff_caught' && (
+          {searchPhase === 'idle' && mood === 'bluff_caught' && (
             <>
               <rect x="29" y="53" width="22" height="4" fill={coatTrim} />
               <rect x="33" y="53" width="4" height="3" fill="#f3cbb1" />
@@ -225,7 +286,7 @@ export function PixelMentorScene({
             </>
           )}
 
-          {!thinking && mood === 'suspicious' && (
+          {searchPhase === 'idle' && mood === 'suspicious' && (
             <g transform={`translate(0, ${stepOdd ? -1 : 0})`}>
               {/* Left arm holding magnifying glass */}
               <rect x="24" y="46" width="5" height="9" fill={coatColor} />
@@ -360,35 +421,64 @@ export function PixelMentorScene({
           </g>
         )}
 
-        {/* Coffee mug right */}
-        <rect x="64" y="56" width="5" height="5" fill="#007a45" />
-        <rect x="69" y="57" width="2" height="3" fill="#007a45" />
+        {/* Coffee mug left-center so right side of desk stays open for laptop */}
+        <rect x="20" y="56" width="5" height="5" fill="#007a45" />
+        <rect x="25" y="57" width="2" height="3" fill="#007a45" />
 
-        {/* Laptop on the desk. Closed until he is searching, then he types. */}
-        {thinking ? (
-          <g data-testid="mikko-laptop">
-            <rect x="28" y="46" width="24" height="12" fill="#112218" />
-            <rect x="30" y="48" width="20" height="8" fill="#0b3d2a" />
-            <rect x="32" y="50" width={5 + (tick % 4) * 2} height="1" fill="#86efac" />
-            <rect x="32" y="52" width={4 + ((tick + 1) % 4) * 2} height="1" fill="#86efac" />
-            <rect x="32" y="54" width={3 + ((tick + 2) % 3) * 2} height="1" fill="#bbf7d0" />
-            {tick % 2 === 0 && <rect x={35 + (tick % 4)} y="54" width="1" height="2" fill="#fde047" />}
-            <rect x="24" y="57" width="32" height="5" fill="#334155" />
-            <rect x="26" y="58" width="28" height="2" fill="#1e293b" />
-            <rect x={28 + (tick % 4) * 2} y="58" width="2" height="1" fill="#94a3b8" />
-            <rect x={31 + (tick % 2)} y="56" width="4" height="2" fill="#f3cbb1" />
-            <rect x={43 - (tick % 2)} y="56" width="4" height="2" fill="#f3cbb1" />
-          </g>
-        ) : (
+        {/* Laptop on the right side when idle; grabbed & tilted (screen hidden) while searching */}
+        {searchPhase === 'idle' && (
           <g data-testid="mikko-laptop" aria-hidden="true">
-            <rect x="18" y="51" width="12" height="2" fill="#334155" />
-            <rect x="17" y="53" width="14" height="5" fill="#1e293b" />
-            <rect x="19" y="54" width="10" height="1" fill="#475569" />
+            <rect x="61" y="59" width="14" height="2" fill="#1e293b" />
+            <rect x="62" y="57" width="12" height="2" fill="#334155" />
+            <rect x="62" y="57" width="12" height="1" fill="#64748b" />
+            <rect x="73" y="59" width="1" height="1" fill="#22c55e" />
+          </g>
+        )}
+
+        {searchPhase === 'grabbing' && (
+          <g data-testid="mikko-laptop" aria-hidden="true">
+            {grabStep === 0 ? (
+              <>
+                <rect x="51" y="58" width="14" height="3" fill="#1e293b" />
+                <rect x="52" y="55" width="12" height="3" fill="#334155" />
+                <rect x="52" y="55" width="12" height="1" fill="#64748b" />
+              </>
+            ) : (
+              <>
+                <rect x="36" y="58" width="17" height="3" fill="#1e293b" />
+                <rect x="37" y="51" width="15" height="3" fill="#475569" />
+                <rect x="38" y="54" width="14" height="4" fill="#334155" />
+                <rect x="51" y="52" width="1" height="5" fill="#64748b" />
+              </>
+            )}
+          </g>
+        )}
+
+        {searchPhase === 'searching' && (
+          <g data-testid="mikko-laptop" aria-hidden="true">
+            {/* Desk base behind tilted lid */}
+            <rect x="29" y="59" width="22" height="2" fill="#1e293b" />
+            <rect x="30" y="58" width="20" height="1" fill="#475569" />
+            {/* Tilted back-of-lid (screen faces Mikko, hidden from viewer) */}
+            <rect x="28" y="46" width="21" height="3" fill="#475569" />
+            <rect x="29" y="49" width="21" height="3" fill="#334155" />
+            <rect x="30" y="52" width="21" height="3" fill="#334155" />
+            <rect x="31" y="55" width="20" height="3" fill="#1e293b" />
+            {/* Side bevel showing tilt angle */}
+            <rect x="49" y="47" width="1" height="3" fill="#64748b" />
+            <rect x="50" y="50" width="1" height="3" fill="#64748b" />
+            <rect x="51" y="53" width="1" height="4" fill="#475569" />
+            {/* Back-shell logo mark */}
+            <rect x="38" y="50" width="3" height="2" fill="#94a3b8" />
+            <rect x="39" y="52" width="1" height="1" fill="#cbd5e1" />
+            {/* Typing hands behind the edges */}
+            <rect x={26 + (tick % 2)} y={56 + (stepOdd ? 0 : 1)} width="3" height="3" fill="#f3cbb1" />
+            <rect x={51 - (tick % 2)} y={56 + (stepOdd ? 1 : 0)} width="3" height="3" fill="#f3cbb1" />
           </g>
         )}
 
         {/* Pointing Arm Reaching Over Desk Toward Floating Chart Below */}
-        {!thinking && mood === 'pointing' && (
+        {searchPhase === 'idle' && mood === 'pointing' && (
           <g transform={`translate(0, ${stepOdd ? 1 : 0})`}>
             <rect x="46" y="49" width="9" height="4" fill={coatColor} />
             <rect x="52" y="52" width="6" height="6" fill={coatColor} />

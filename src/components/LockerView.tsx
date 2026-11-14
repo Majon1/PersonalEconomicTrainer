@@ -10,9 +10,10 @@ interface LockerViewProps {
   holderName: string;
   slipsSharePct: number;
   onSelectShopItem: (item: ShopItem) => void;
-  onClose: () => void;
+  onClose?: () => void;
   onResetDemo: () => void;
   feedbackMsg?: string | null;
+  embedded?: boolean;
 }
 
 export function LockerView({
@@ -23,6 +24,7 @@ export function LockerView({
   onClose,
   onResetDemo,
   feedbackMsg,
+  embedded = false,
 }: LockerViewProps) {
   const [activeSlot, setActiveSlot] = useState<ShopItem['slot']>('mentor_style');
 
@@ -36,38 +38,44 @@ export function LockerView({
 
   return (
     <div
-      className="absolute inset-0 z-40 flex flex-col overflow-hidden"
+      className={
+        embedded
+          ? 'p-3 space-y-3'
+          : 'absolute inset-0 z-40 flex flex-col overflow-hidden'
+      }
       style={{ backgroundColor: 'var(--app-bg)' }}
       data-testid="locker-view"
     >
-      {/* Locker Header */}
-      <div
-        className="h-12 px-3.5 flex items-center justify-between border-b-2 shrink-0"
-        style={{
-          backgroundColor: 'var(--app-surface)',
-          borderColor: 'var(--app-border)',
-        }}
-      >
-        <div className="flex items-center gap-2">
-          <span className="font-num font-bold text-xs tracking-wider">LOCKER</span>
-          <span className="text-xs text-[var(--app-text-muted)]">·</span>
-          <span className="font-num text-xs font-bold">
-            Lvl {progress.level} · {progress.coins} Coins
-          </span>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close locker"
-          className="w-8 h-8 flex items-center justify-center border border-[var(--app-border)] cursor-pointer"
-          style={{ backgroundColor: 'var(--app-surface-muted)' }}
+      {!embedded && (
+        <div
+          className="h-12 px-3.5 flex items-center justify-between border-b-2 shrink-0"
+          style={{
+            backgroundColor: 'var(--app-surface)',
+            borderColor: 'var(--app-border)',
+          }}
         >
-          <X className="w-4 h-4" />
-        </button>
-      </div>
+          <div className="flex items-center gap-2">
+            <span className="font-num font-bold text-xs tracking-wider">LOCKER</span>
+            <span className="text-xs text-[var(--app-text-muted)]">·</span>
+            <span className="font-num text-xs font-bold">
+              Lvl {progress.level} · {progress.coins} Coins
+            </span>
+          </div>
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close locker"
+              className="w-8 h-8 flex items-center justify-center border border-[var(--app-border)] cursor-pointer"
+              style={{ backgroundColor: 'var(--app-surface-muted)' }}
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      )}
 
-      {/* Scrollable Body */}
-      <div className="flex-1 overflow-y-auto p-3.5 space-y-3">
+      <div className={embedded ? 'space-y-3' : 'flex-1 overflow-y-auto p-3.5 space-y-3'}>
         {/* Live Preview */}
         <div className="pixel-card p-3 flex flex-col items-center gap-3">
           <div className="w-full flex items-center justify-center gap-3">
