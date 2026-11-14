@@ -285,6 +285,9 @@ export default function App() {
 
   const progress = userState?.progress;
   // The progress object last stored on the server; `ready` once the server copy is in.
+  const dialogueAreaRef = useRef<HTMLElement>(null);
+  const dialogueRef = useRef<HTMLDivElement>(null);
+  const [dialogueScrolls, setDialogueScrolls] = useState(false);
   const progressSync = useRef<{ customerId: string | null; ready: boolean; sent: PlayerProgress | null }>({
     customerId: null,
     ready: false,
@@ -512,9 +515,30 @@ export default function App() {
     }
   }, [ledgerReady, customerId, moneyMood, budgetStatus, seasonAhead]);
 
+  // The landing message sits in a fixed area. Scroll only when that message
+  // (or a chart under it) is actually taller than the area.
+  useEffect(() => {
+    const area = dialogueAreaRef.current;
+    const dialogue = dialogueRef.current;
+    if (!area || !dialogue) {
+      setDialogueScrolls(false);
+      return;
+    }
+    const check = () => {
+      const style = getComputedStyle(area);
+      const available = area.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+      setDialogueScrolls(dialogue.offsetHeight > available + 1);
+    };
+    check();
+    const observer = new ResizeObserver(check);
+    observer.observe(area);
+    observer.observe(dialogue);
+    return () => observer.disconnect();
+  }, [page, customTurn, asking, ledgerReady]);
+
   if (loadError || !userState || !progress || !ledgerReady || !customerId) {
     return (
-      <div className="min-h-[100dvh] w-full flex items-center justify-center framed:p-4">
+      <div className="h-[100dvh] overflow-hidden w-full flex items-center justify-center framed:p-4">
         <div
           data-testid="phone-shell"
           className="relative w-full max-w-[560px] framed:w-[398px] h-[100dvh] framed:h-[812px] framed:max-h-[94vh] flex items-center justify-center px-6 text-center framed:border-[3px]"
@@ -947,7 +971,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-[100dvh] w-full flex items-center justify-center framed:p-4">
+    <div className="h-[100dvh] overflow-hidden w-full flex items-center justify-center framed:p-4">
       <div
         data-testid="phone-shell"
         className="relative w-full max-w-[560px] framed:w-[398px] h-[100dvh] framed:h-[812px] framed:max-h-[94vh] flex flex-col overflow-hidden framed:border-[3px]"
@@ -1221,12 +1245,13 @@ export default function App() {
             </div>
 
             <main
-              className="flex-1 min-h-0 px-3 pt-1.5 pb-2 overflow-y-auto flex flex-col"
+              ref={dialogueAreaRef}
+              className={`flex-1 min-h-0 px-3 pt-1.5 pb-2 flex flex-col ${dialogueScrolls ? 'overflow-y-auto' : 'overflow-hidden'}`}
               style={{ backgroundColor: '#6f451f' }}
             >
               {/* No chart: the message sits on the bottom and grows upward. A chart keeps the old top-down stack. */}
-              {!customTurn?.chart && <div className="flex-1" aria-hidden="true" />}
-              <div className="shrink-0 flex flex-col gap-1.5">
+              {!customTurn?.chart && <div className="min-h-0 flex-1" aria-hidden="true" />}
+              <div ref={dialogueRef} className="shrink-0 flex flex-col gap-1.5">
               {levelUpToast && (
                 <div
                   data-testid="level-up-banner"
