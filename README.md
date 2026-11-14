@@ -17,6 +17,9 @@ S-Bank-style transaction data, in the spirit of MyData.
   more than you earned, everyday habits jumped, thin buffer), angry when you buy
   things you can't afford (e.g. takeaway that leaves less than the rent still
   due before payday). Comes with a 0-100 score, ready for gamification.
+- **Emergency fund:** progress towards keeping 3 months of money going out on
+  the account (3 months of pay shown as an alternative). Reaching it makes the
+  buddy happier; having less than a month is a gentle nudge.
 - **Your data, your rules:** move any category or merchant type to another
   basket, see exactly what the data contains, and download it as JSON or CSV.
 - **Open-data benchmarks** from Statistics Finland: spending per category vs.

@@ -97,6 +97,17 @@ export const declarations = [
     },
   },
   {
+    name: "get_emergency_fund",
+    description:
+      "The user's emergency fund: money on the account versus the goal of 3 months of money going out (also shows " +
+      "the 3-months-of-pay alternative), months covered, progress, how much is missing, and money invested (not counted, " +
+      "since it isn't instant cash). Use for questions about savings buffers, emergencies, rainy-day money, safety nets.",
+    parameters: {
+      type: "object",
+      properties: { month: { type: "string", description: "YYYY-MM. Default: the month shown on the dashboard." } },
+    },
+  },
+  {
     name: "get_mood",
     description:
       "The money buddy's mood for a month (happy, mild or angry), its 0-100 score and the reasons: purchases the user " +
@@ -149,7 +160,7 @@ export const declarations = [
       properties: {
         month: { type: "string", description: "Month to show, YYYY-MM." },
         basket_filter: { type: "string", enum: ["all", "regular", "irregular", "everyday", "extras", "money"] },
-        section: { type: "string", enum: ["status", "buddy", "baskets", "habits", "monthly", "categories", "finland", "transactions", "mydata"] },
+        section: { type: "string", enum: ["status", "buddy", "emergency", "baskets", "habits", "monthly", "categories", "finland", "transactions", "mydata"] },
       },
     },
   },
@@ -166,6 +177,8 @@ export function runTool(engine, name, args = {}) {
       return { result: engine.safeToSpend(args) };
     case "what_if":
       return { result: engine.whatIf(args) };
+    case "get_emergency_fund":
+      return { result: engine.emergencyFund(args.month || engine.viewMonth || undefined) };
     case "get_mood":
       return { result: engine.mood(args.month || engine.viewMonth || undefined) };
     case "find_money_leaks":

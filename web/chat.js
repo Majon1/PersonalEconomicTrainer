@@ -23,6 +23,7 @@ const SUGGESTIONS = [
   "What could I cut if money got tight?",
   "How do I compare with other Finns my age?",
   "Why is my money buddy in that mood?",
+  "Do I have enough of an emergency fund?",
 ];
 
 const history = []; // [{role: "user"|"model", text}]

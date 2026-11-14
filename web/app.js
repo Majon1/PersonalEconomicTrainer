@@ -232,6 +232,40 @@ function renderBuddy() {
   document.dispatchEvent(new CustomEvent("mood-change", { detail: md }));
 }
 
+// ---------- emergency fund ----------
+const EF_STATUS = {
+  reached: { label: "✓ Goal reached", color: "#0ca30c" },
+  building: { label: "! Getting there", color: "#fab219" },
+  low: { label: "✕ Not yet", color: "#d03b3b" },
+};
+function renderEmergency() {
+  const ef = E.emergencyFund(state.month);
+  if (ef.error) return;
+  const st = EF_STATUS[ef.status] || EF_STATUS.low;
+  const covered = ef.months_covered ?? 0;
+  $("efSub").textContent = `A safety net for surprises: ${ef.goal}. Based on your spending, that's ${fmt(ef.target_eur)}.`;
+  $("efStatus").innerHTML = `<span class="dot" style="background:${st.color}"></span>${st.label}`;
+  // Scale shows at least the 3-month goal, up to 6 months.
+  const scaleMonths = Math.min(6, Math.max(3, Math.ceil(covered)));
+  const pctOf = (mo) => (mo / scaleMonths) * 100;
+  $("efMeter").innerHTML = `
+    <div class="ef-track" role="meter" aria-valuemin="0" aria-valuemax="${scaleMonths}" aria-valuenow="${covered.toFixed(1)}"
+      aria-label="Emergency fund: ${covered.toFixed(1)} months of spending covered, goal 3">
+      <div class="ef-fill" style="width:${Math.min(100, pctOf(covered))}%;background:${st.color}"></div>
+    </div>
+    <div class="ef-goal" style="left:calc(${pctOf(3)}% - 1px)" title="3-month goal"></div>
+    <div class="ef-ticks"><span style="left:0">0</span><span style="left:${pctOf(3)}%">Goal: 3 months</span>${
+      scaleMonths > 3 ? `<span style="left:100%">${scaleMonths}${covered > 6 ? "+" : ""} months</span>` : ""}</div>`;
+  const facts = [
+    ["Months covered", `${covered.toLocaleString("en-IE", { maximumFractionDigits: 1 })}`],
+    ["On your account", fmt(ef.balance_eur)],
+    [ef.missing_eur > 0 ? "Still to go" : "Above the goal", fmt(ef.missing_eur > 0 ? ef.missing_eur : ef.balance_eur - ef.target_eur)],
+    ["Invested (not counted)", fmt(ef.invested_so_far_eur)],
+  ];
+  $("efFacts").innerHTML = facts.map(([l, v]) => `<div class="tile"><div class="label">${l}</div><div class="tile-value">${v}</div></div>`).join("") +
+    `<p class="muted small" style="grid-column:1/-1;margin:0">Money going out averages ${fmt(ef.monthly_outgoings_eur)} a month (${esc(ef.based_on)}). If you'd rather count 3 months of pay, the goal would be ${fmt(ef.alternative_target_3_months_pay_eur)}.</p>`;
+}
+
 // ---------- where it really goes ----------
 function renderHabits() {
   const k = state.habitBasket;
@@ -568,6 +602,7 @@ function renderMonth() {
   const s = E.MONTH_STATS[state.month];
   const avg = priorAverage(state.month);
   renderBuddy();
+  renderEmergency();
   renderHeadline(s, avg);
   renderBaskets(s, avg);
   renderCategories(s);
@@ -586,7 +621,7 @@ function rebuild() {
 export function applyDashboardAction(a) {
   if (a.month) setMonth(a.month);
   if (a.basket_filter) { state.filter = a.basket_filter; renderTransactions(); }
-  const target = a.section && { status: "sec-status", buddy: "sec-buddy", baskets: "sec-baskets", habits: "sec-habits", monthly: "sec-monthly", categories: "sec-categories",
+  const target = a.section && { status: "sec-status", buddy: "sec-buddy", emergency: "sec-emergency", baskets: "sec-baskets", habits: "sec-habits", monthly: "sec-monthly", categories: "sec-categories",
     finland: "sec-finland", transactions: "sec-transactions", mydata: "sec-mydata" }[a.section];
   if (target) $(target)?.scrollIntoView({ behavior: "smooth", block: "start" });
 }

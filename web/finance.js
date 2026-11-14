@@ -301,6 +301,42 @@ export function createEngine(data, { overrides = {}, benchmarks = null } = {}) {
     }
   });
 
+  // ---------- emergency fund ----------
+  // Goal: money on the account (instantly available) covering 3 months of
+  // money going out. Investments are reported separately: not instant cash.
+  const EMERGENCY_MONTHS = 3;
+  function emergencyFund(month = months[months.length - 1]) {
+    if (!MONTH_STATS[month]) return { error: `No data for ${month}` };
+    const i = months.indexOf(month);
+    const window = months.slice(Math.max(0, i - 11), i + 1).map((m) => MONTH_STATS[m]);
+    const monthlyOut = window.reduce((a, x) => a + x.spend, 0) / window.length;
+    const monthlyPay = window.reduce((a, x) => a + x.income, 0) / window.length;
+    const balance = MONTH_STATS[month].endBalance;
+    const target = monthlyOut * EMERGENCY_MONTHS;
+    const covered = monthlyOut ? balance / monthlyOut : null;
+    let invested = 0;
+    for (const t of txs) {
+      if (t.date.slice(0, 7) > month) break;
+      if (t.type === "investment_deposit") invested -= t.amount;
+      if (t.type === "investment_withdrawal") invested -= t.amount;
+    }
+    const status = covered == null ? "unknown" : covered >= EMERGENCY_MONTHS ? "reached" : covered >= 1 ? "building" : "low";
+    return {
+      month,
+      goal: `${EMERGENCY_MONTHS} months of money going out, kept on your account`,
+      monthly_outgoings_eur: r2(monthlyOut),
+      target_eur: r2(target),
+      alternative_target_3_months_pay_eur: r2(monthlyPay * EMERGENCY_MONTHS),
+      balance_eur: r2(balance),
+      months_covered: covered != null ? r2(covered) : null,
+      progress_pct: target > 0 ? Math.max(0, Math.min(100, Math.round((balance / target) * 100))) : null,
+      missing_eur: r2(Math.max(0, target - balance)),
+      status,
+      invested_so_far_eur: r2(Math.max(0, invested)),
+      based_on: `average of ${window.length} month${window.length > 1 ? "s" : ""} up to ${month}`,
+    };
+  }
+
   /** Mood for one month: happy, mild or angry, with the reasons behind it. */
   function mood(month = months[months.length - 1]) {
     if (!MONTH_STATS[month]) return { error: `No data for ${month}` };
@@ -308,11 +344,11 @@ export function createEngine(data, { overrides = {}, benchmarks = null } = {}) {
     const i = months.indexOf(month);
     const prior = months.slice(Math.max(0, i - 12), i).map((m) => MONTH_STATS[m]);
     const avg = (k) => (prior.length ? prior.reduce((a, x) => a + x[k], 0) / prior.length : s[k]);
-    const mandatory = avg("regular") + avg("irregular") || s.regular + s.irregular;
     const flex = s.everyday + s.extras;
     const net = s.income - s.spend;
     const savingsRate = s.income > 0 ? net / s.income : null;
-    const buffer = mandatory ? s.endBalance / mandatory : null;
+    const ef = emergencyFund(month);
+    const buffer = ef.months_covered;
     const monthRisky = risky.filter((r) => r.date.startsWith(month));
     const negativeDays = new Set(txs.filter((t) => t.date.startsWith(month) && t.balance < 0).map((t) => t.date)).size;
 
@@ -333,7 +369,9 @@ export function createEngine(data, { overrides = {}, benchmarks = null } = {}) {
     }
     if (negativeDays && flex > 0) bad.push(`your account was in the red on ${negativeDays} day${negativeDays > 1 ? "s" : ""}`);
     if (s.income > 0 && net < 0) meh.push(`you spent ${e0(-net)} more than came in`);
-    if (buffer != null && buffer < 1 && !bad.length) meh.push(`your balance covers less than one month of must-pay costs`);
+    if (buffer != null && buffer < 1) {
+      meh.push(`no real emergency fund yet: your balance covers less than a month of spending (goal: ${EMERGENCY_MONTHS} months, ${e0(ef.target_eur)})`);
+    }
     const prevEveryday = avg("everyday");
     if (prior.length && s.everyday > prevEveryday * 1.5 && s.everyday - prevEveryday > 50) {
       meh.push(`small everyday purchases jumped to ${e0(s.everyday)} (usually about ${e0(prevEveryday)})`);
@@ -342,13 +380,18 @@ export function createEngine(data, { overrides = {}, benchmarks = null } = {}) {
     if (savingsRate != null && savingsRate >= 0.2) good.push(`you kept ${Math.round(savingsRate * 100)}% of your income`);
     if (s.saving > 0) good.push(`you moved ${e0(s.saving)} to investments`);
     if (!monthRisky.length && flex > 0) good.push(`every treat was within your means`);
-    if (buffer != null && buffer >= 3) good.push(`your buffer covers ${Math.floor(buffer)} months of must-pay costs`);
+    if (buffer != null && buffer >= EMERGENCY_MONTHS) {
+      good.unshift(`your emergency fund covers ${Math.floor(buffer)} months of spending: ${EMERGENCY_MONTHS}-month goal reached`);
+    } else if (buffer != null && buffer >= 1) {
+      good.push(`emergency fund on its way: ${Math.round(ef.progress_pct)}% of the ${EMERGENCY_MONTHS}-month goal`);
+    }
 
     const level = bad.length ? "angry" : meh.length ? "mild" : "happy";
     // 0-100 for later gamification; banded so it always agrees with the mood:
     // angry 0-35, mild 36-69, happy 70-100.
-    const raw = 60 + (savingsRate ?? 0) * 80 - 12 * meh.length - 4 * Math.min(5, monthRisky.length)
-      + (buffer != null ? Math.min(10, buffer * 2) : 0);
+    // emergency fund progress is worth up to 15 points
+    const raw = 55 + (savingsRate ?? 0) * 80 - 12 * meh.length - 4 * Math.min(5, monthRisky.length)
+      + (ef.progress_pct != null ? (ef.progress_pct / 100) * 15 : 0);
     const [lo, hi] = { angry: [0, 35], mild: [36, 69], happy: [70, 100] }[level];
     const score = Math.round(Math.max(lo, Math.min(hi, level === "angry" ? raw - 50 : raw)));
     return {
@@ -361,7 +404,8 @@ export function createEngine(data, { overrides = {}, benchmarks = null } = {}) {
       numbers: {
         income_eur: r2(s.income), spending_eur: r2(s.spend), flexible_spending_eur: r2(flex),
         savings_rate_pct: savingsRate != null ? Math.round(savingsRate * 100) : null,
-        buffer_months: buffer != null ? r2(buffer) : null,
+        emergency_fund_months: buffer != null ? r2(buffer) : null,
+        emergency_fund_progress_pct: ef.progress_pct,
       },
     };
   }
@@ -648,7 +692,7 @@ export function createEngine(data, { overrides = {}, benchmarks = null } = {}) {
 
   return {
     data, txs, today, firstDate, months, categories, merchantTypes, label,
-    MONTH_STATS, monthStats, averages, resolvePeriod, query, profile, safeToSpend, whatIf, benchmark, habits, mood,
+    MONTH_STATS, monthStats, averages, resolvePeriod, query, profile, safeToSpend, whatIf, benchmark, habits, mood, emergencyFund,
     describe,
   };
 }
