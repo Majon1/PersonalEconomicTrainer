@@ -30,12 +30,18 @@ const MCC_NAMES = {
 export function createPool() {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) throw new Error("DATABASE_URL is not set. Add it to .env and restart.");
-  // Aiven's chain is not in Node's trust store. Keep TLS, skip CA verification.
-  // Drop sslmode so node-postgres does not upgrade "require" to verify-full.
-  const normalized = connectionString
-    .replace(/([?&])sslmode=[^&]*/g, "$1")
-    .replace(/[?&]$/, "");
-  return new Pool({ connectionString: normalized, max: 5, ssl: { rejectUnauthorized: false } });
+  // sslmode in the URL overrides the ssl option in pg v8, so remove it and
+  // verify with the CA Aiven injects. Locally, without that cert, still encrypt.
+  const url = new URL(connectionString);
+  url.searchParams.delete("sslmode");
+  const ca = process.env.PROJECT_CA_CERT
+    ? Buffer.from(process.env.PROJECT_CA_CERT, "base64").toString()
+    : undefined;
+  return new Pool({
+    connectionString: url.toString(),
+    max: 5,
+    ssl: ca ? { ca } : { rejectUnauthorized: false },
+  });
 }
 
 export async function loadBenchmarks(pool) {

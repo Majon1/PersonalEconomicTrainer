@@ -86,7 +86,7 @@ if (process.env.NODE_ENV === "production" && existsSync(join(ROOT, "dist", "inde
   app.use(vite.middlewares);
 }
 
-app.listen(PORT, "127.0.0.1", () => {
+app.listen(PORT, "0.0.0.0", () => {
   const model = process.env.GEMINI_MODEL || "gemini-4-hydrogen";
   console.log(`Personal Economic Trainer at http://localhost:${PORT}`);
   console.log(process.env.GEMINI_API_KEY ? `Chat uses ${model}` : "No GEMINI_API_KEY: the coach loads, chat stays off");
