@@ -2,9 +2,17 @@ import { SHOP_CATALOG } from './data';
 import type {
   BasketKey,
   BasketSummary,
+  Budget,
+  BudgetLine,
+  BudgetStatus,
   ChartPayload,
+  EmergencyFund,
+  PurchaseVerdict,
   LabelOverride,
   MentorMood,
+  MoneyMood,
+  MoneyMoodLevel,
+  RiskyPurchase,
   PersonaConfig,
   PlayerProgress,
   ShopItem,
@@ -38,7 +46,24 @@ export function xpProgressInLevel(xp: number): {
   };
 }
 
+/** Purchases up to this size count as "slips"; bigger ones at the same places are "nice to have". */
+export const SMALL_PURCHASE_EUR = 40;
+
+/** Money moved to investments or between own accounts: not spending. */
+export function isNonSpending(tx: Transaction): boolean {
+  return (
+    tx.type === 'investment_deposit' ||
+    tx.type === 'salary_sweep' ||
+    tx.category === 'Invest Deposit' ||
+    tx.category === 'Salary Sweep'
+  );
+}
+
 export function defaultBasketForTx(tx: Transaction): BasketKey {
+  const abs = Math.abs(tx.amount);
+  const small = abs <= SMALL_PURCHASE_EUR;
+  // Kiosk / convenience store: a snack is a slip, a bigger run is groceries.
+  if (tx.mcc === '5499') return small ? 'slips' : 'mandatory_regular';
   if (
     tx.category === 'Housing' ||
     tx.category === 'Utilities' ||
@@ -49,12 +74,16 @@ export function defaultBasketForTx(tx: Transaction): BasketKey {
   ) {
     return 'mandatory_regular';
   }
-  if (
-    tx.category === 'Health' ||
-    tx.category === 'Home & Tech' ||
-    tx.category === 'Travel'
-  ) {
+  if (tx.category === 'Health' || tx.category === 'Home & Tech') {
     return 'mandatory_irregular';
+  }
+  // Things you could live without if money got tight.
+  if (tx.category === 'Travel' || tx.category === 'Entertainment' || tx.category === 'Lifestyle') {
+    return 'nice_to_have';
+  }
+  // Cafés, restaurants, bars and taxis: small = slip, big = a nice-to-have.
+  if (tx.category === 'Restaurants' || tx.mcc === '4121') {
+    return small ? 'slips' : 'nice_to_have';
   }
   return 'slips';
 }
@@ -101,8 +130,10 @@ export function computeBaskets(
     mandatory_regular: 0,
     mandatory_irregular: 0,
     slips: 0,
+    nice_to_have: 0,
     totalSpend: 0,
     income: 0,
+    saved: 0,
   };
 
   for (const tx of transactions) {
@@ -112,6 +143,10 @@ export function computeBaskets(
       continue;
     }
     const abs = Math.abs(tx.amount);
+    if (isNonSpending(tx)) {
+      summary.saved += abs;
+      continue;
+    }
     const { basket } = resolveTxBasket(tx, overrides);
     summary[basket] += abs;
     summary.totalSpend += abs;
@@ -120,9 +155,321 @@ export function computeBaskets(
   summary.mandatory_regular = round2(summary.mandatory_regular);
   summary.mandatory_irregular = round2(summary.mandatory_irregular);
   summary.slips = round2(summary.slips);
+  summary.nice_to_have = round2(summary.nice_to_have);
   summary.totalSpend = round2(summary.totalSpend);
   summary.income = round2(summary.income);
+  summary.saved = round2(summary.saved);
   return summary;
+}
+
+// ---------------------------------------------------------------------------
+// Emergency fund and money mood
+// ---------------------------------------------------------------------------
+
+export const EMERGENCY_FUND_MONTHS = 3;
+
+function monthKeys(transactions: Transaction[]): string[] {
+  return [...new Set(transactions.map((t) => t.date.slice(0, 7)))].sort();
+}
+
+function sortedTxs(transactions: Transaction[]): Transaction[] {
+  return [...transactions].sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
+}
+
+/**
+ * Emergency fund: money on the account covering 3 months of money going out
+ * (average of the last 12 months). Investments don't count: not instant cash.
+ */
+export function computeEmergencyFund(
+  transactions: Transaction[],
+  overrides: LabelOverride[] = [],
+  monthKey?: string,
+): EmergencyFund {
+  const months = monthKeys(transactions);
+  const month = monthKey ?? months[months.length - 1] ?? '2026-09';
+  const i = Math.max(0, months.indexOf(month));
+  const window = months.slice(Math.max(0, i - 11), i + 1);
+  const sums = window.map((m) => computeBaskets(transactions, overrides, m));
+  const n = Math.max(1, sums.length);
+  const monthlyOutgoings = sums.reduce((a, s) => a + s.totalSpend, 0) / n;
+  const monthlyPay = sums.reduce((a, s) => a + s.income, 0) / n;
+  const inMonth = sortedTxs(transactions).filter((t) => t.date.slice(0, 7) <= month);
+  const balance = inMonth.length ? inMonth[inMonth.length - 1].balanceAfter : 0;
+  const target = monthlyOutgoings * EMERGENCY_FUND_MONTHS;
+  const monthsCovered = monthlyOutgoings > 0 ? balance / monthlyOutgoings : 0;
+  return {
+    month,
+    goalMonths: EMERGENCY_FUND_MONTHS,
+    monthlyOutgoings: round2(monthlyOutgoings),
+    target: round2(target),
+    alternativeTargetPay: round2(monthlyPay * EMERGENCY_FUND_MONTHS),
+    balance: round2(balance),
+    monthsCovered: round2(monthsCovered),
+    progressPct: target > 0 ? Math.max(0, Math.min(100, Math.round((balance / target) * 100))) : 0,
+    missing: round2(Math.max(0, target - balance)),
+    status: monthsCovered >= EMERGENCY_FUND_MONTHS ? 'reached' : monthsCovered >= 1 ? 'building' : 'low',
+  };
+}
+
+/**
+ * Purchases you couldn't really afford: a slip or nice-to-have that left less
+ * money than the rent and bills still due before the next income, or that took
+ * the account below zero.
+ */
+export function detectRiskyPurchases(
+  transactions: Transaction[],
+  overrides: LabelOverride[] = [],
+): RiskyPurchase[] {
+  const txs = sortedTxs(transactions);
+  const isBill = (t: Transaction) => t.amount < 0 && (t.category === 'Housing' || t.category === 'Utilities');
+  const out: RiskyPurchase[] = [];
+  txs.forEach((t, i) => {
+    if (t.amount >= 0 || isNonSpending(t)) return;
+    const { basket, customLabel } = resolveTxBasket(t, overrides);
+    if (basket !== 'slips' && basket !== 'nice_to_have') return;
+    let due = 0;
+    const limit = addDays(t.date, 31);
+    for (let j = i + 1; j < txs.length; j++) {
+      const u = txs[j];
+      if (u.amount > 0 && !isNonSpending(u)) break; // next income
+      if (u.date > limit) break;
+      if (isBill(u)) due += Math.abs(u.amount);
+    }
+    if (t.balanceAfter < 0 || t.balanceAfter < due) {
+      out.push({
+        txId: t.id,
+        date: t.date,
+        label: customLabel || t.merchantType || t.category,
+        basket,
+        amount: round2(Math.abs(t.amount)),
+        balanceAfter: round2(t.balanceAfter),
+        billsDueBeforeIncome: round2(due),
+      });
+    }
+  });
+  return out;
+}
+
+const MOOD_FACE: Record<MoneyMoodLevel, MentorMood> = {
+  angry: 'bluff_caught',
+  mild: 'suspicious',
+  happy: 'impressed',
+};
+
+/** How this month's decisions look: happy, mild or angry, with the reasons. */
+export function computeMoneyMood(
+  transactions: Transaction[],
+  overrides: LabelOverride[] = [],
+  monthKey?: string,
+): MoneyMood {
+  const months = monthKeys(transactions);
+  const month = monthKey ?? months[months.length - 1] ?? '2026-09';
+  const i = Math.max(0, months.indexOf(month));
+  const s = computeBaskets(transactions, overrides, month);
+  const prior = months.slice(Math.max(0, i - 12), i).map((m) => computeBaskets(transactions, overrides, m));
+  const prevSlips = prior.length ? prior.reduce((a, x) => a + x.slips, 0) / prior.length : s.slips;
+  const ef = computeEmergencyFund(transactions, overrides, month);
+  const risky = detectRiskyPurchases(transactions, overrides).filter((r) => r.date.startsWith(month));
+  const negativeDays = new Set(
+    transactions.filter((t) => t.date.startsWith(month) && t.balanceAfter < 0).map((t) => t.date),
+  ).size;
+  const net = s.income - s.totalSpend;
+  const savingsRate = s.income > 0 ? net / s.income : null;
+  const e0 = (v: number) => `€${Math.round(v).toLocaleString('en-IE')}`;
+
+  const bad: string[] = [];
+  const meh: string[] = [];
+  const good: string[] = [];
+  if (risky.length) {
+    const withBills = risky.filter((r) => r.balanceAfter >= 0 && r.billsDueBeforeIncome > r.balanceAfter);
+    const n = `${risky.length} purchase${risky.length > 1 ? 's' : ''} you couldn't really afford`;
+    if (withBills.length) {
+      const w = withBills.reduce((a, b) => (b.billsDueBeforeIncome - b.balanceAfter > a.billsDueBeforeIncome - a.balanceAfter ? b : a));
+      bad.push(`${n}: ${w.label} for ${e0(w.amount)} on ${w.date} left ${e0(w.balanceAfter)} with ${e0(w.billsDueBeforeIncome)} of rent and bills still due`);
+    } else {
+      const w = risky.reduce((a, b) => (b.balanceAfter < a.balanceAfter ? b : a));
+      bad.push(`${n}: ${w.label} for ${e0(w.amount)} on ${w.date} took the balance to ${e0(w.balanceAfter)}`);
+    }
+  }
+  if (negativeDays) bad.push(`account in the red on ${negativeDays} day${negativeDays > 1 ? 's' : ''}`);
+  if (s.income > 0 && net < 0) meh.push(`spent ${e0(-net)} more than came in`);
+  if (ef.monthsCovered < 1) meh.push(`no real emergency fund yet (goal: ${EMERGENCY_FUND_MONTHS} months, ${e0(ef.target)})`);
+  if (prior.length && s.slips > prevSlips * 1.5 && s.slips - prevSlips > 50) {
+    meh.push(`small slips jumped to ${e0(s.slips)} (usually ${e0(prevSlips)})`);
+  }
+  if (savingsRate != null && savingsRate >= 0 && savingsRate < 0.05) meh.push('almost nothing left over to save');
+  if (ef.status === 'reached') good.push(`emergency fund covers ${Math.floor(ef.monthsCovered)} months: goal reached`);
+  else if (ef.status === 'building') good.push(`emergency fund at ${ef.progressPct}% of the ${EMERGENCY_FUND_MONTHS}-month goal`);
+  if (savingsRate != null && savingsRate >= 0.2) good.push(`kept ${Math.round(savingsRate * 100)}% of income`);
+  if (s.saved > 0) good.push(`moved ${e0(s.saved)} to investments`);
+  if (!risky.length && s.slips + s.nice_to_have > 0) good.push('every treat was within your means');
+
+  const level: MoneyMoodLevel = bad.length ? 'angry' : meh.length ? 'mild' : 'happy';
+  // 0-100, banded so it always agrees with the mood: angry 0-35, mild 36-69, happy 70-100.
+  const raw = 55 + (savingsRate ?? 0) * 80 - 12 * meh.length - 4 * Math.min(5, risky.length) + (ef.progressPct / 100) * 15;
+  const [lo, hi] = level === 'angry' ? [0, 35] : level === 'mild' ? [36, 69] : [70, 100];
+  const score = Math.round(Math.max(lo, Math.min(hi, level === 'angry' ? raw - 50 : raw)));
+  const headline =
+    level === 'angry'
+      ? `Rent money went on treats. ${capitalise(bad[0])}.`
+      : level === 'mild'
+        ? `Not bad, but: ${meh[0]}.`
+        : `Living within your means. ${capitalise(good[0] ?? 'Nice work')}.`;
+  return { month, level, mentorMood: MOOD_FACE[level], score, headline, reasons: { bad, meh, good }, risky, emergency: ef };
+}
+
+// ---------------------------------------------------------------------------
+// Budget: monthly limits Mikko uses to steer you away from buys you'd regret
+// ---------------------------------------------------------------------------
+
+export const BUDGET_CATEGORIES = ['Restaurants', 'Entertainment', 'Lifestyle', 'Travel'] as const;
+
+/** Mikko's suggestion: last 3 months' average, trimmed 10%, rounded to €10. */
+export function suggestBudget(transactions: Transaction[], overrides: LabelOverride[] = []): Budget {
+  const months = monthKeys(transactions);
+  const recent = months.slice(-4, -1).length ? months.slice(-4, -1) : months.slice(-1);
+  const sums = recent.map((m) => computeBaskets(transactions, overrides, m));
+  const avg = (k: 'slips' | 'nice_to_have') => sums.reduce((a, s) => a + s[k], 0) / Math.max(1, sums.length);
+  const trim = (v: number) => Math.max(10, Math.floor((v * 0.9) / 10) * 10);
+  return { slips: trim(avg('slips')), nice_to_have: trim(avg('nice_to_have')), categories: {} };
+}
+
+function categorySpend(transactions: Transaction[], month: string, category: string): number {
+  return transactions
+    .filter((t) => t.date.startsWith(month) && t.amount < 0 && !isNonSpending(t) && t.category === category)
+    .reduce((a, t) => a + Math.abs(t.amount), 0);
+}
+
+export function computeBudgetStatus(
+  transactions: Transaction[],
+  overrides: LabelOverride[],
+  budget: Budget,
+  monthKey?: string,
+): BudgetStatus {
+  const months = monthKeys(transactions);
+  const month = monthKey ?? months[months.length - 1] ?? '2026-09';
+  const inMonth = transactions.filter((t) => t.date.startsWith(month)).map((t) => t.date).sort();
+  const today = inMonth[inMonth.length - 1] ?? `${month}-01`;
+  const [y, m] = month.split('-').map(Number);
+  const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const day = Number(today.slice(8, 10)) || 1;
+  const s = computeBaskets(transactions, overrides, month);
+
+  const line = (key: string, label: string, limit: number, spent: number): BudgetLine => {
+    const projected = (spent / day) * daysInMonth;
+    const status: BudgetLine['status'] =
+      spent > limit ? 'over' : spent >= limit * 0.8 || projected > limit * 1.05 ? 'close' : 'ok';
+    return {
+      key, label, limit: round2(limit), spent: round2(spent), left: round2(limit - spent),
+      pct: limit > 0 ? Math.round((spent / limit) * 100) : 0, projected: round2(projected), status,
+    };
+  };
+  const lines: BudgetLine[] = [];
+  if (budget.slips > 0) lines.push(line('slips', 'Slips', budget.slips, s.slips));
+  if (budget.nice_to_have > 0) lines.push(line('nice_to_have', 'Nice to have', budget.nice_to_have, s.nice_to_have));
+  for (const [cat, limit] of Object.entries(budget.categories || {})) {
+    if (limit > 0) lines.push(line(cat, cat, limit, categorySpend(transactions, month, cat)));
+  }
+  const rank = { over: 2, close: 1, ok: 0 } as const;
+  const trouble = lines.filter((l) => l.status !== 'ok').sort((a, b) => rank[b.status] - rank[a.status] || b.pct - a.pct);
+  return { month, today, daysLeft: Math.max(0, daysInMonth - day), lines, worst: trouble[0] ?? null };
+}
+
+/**
+ * "Can I afford it?" Checks a planned purchase against the budget, the money
+ * needed for bills until payday, and the emergency fund.
+ */
+export function checkPurchase(params: {
+  transactions: Transaction[];
+  overrides: LabelOverride[];
+  budget: Budget | null;
+  amount: number;
+  category: string;
+  what?: string;
+}): PurchaseVerdict {
+  const { transactions, overrides, budget, category } = params;
+  const amount = Math.max(0, Number(params.amount) || 0);
+  const what = params.what?.trim() || category.toLowerCase();
+  const mcc = category === 'Restaurants' ? '5812' : category === 'Taxi' ? '4121' : '';
+  const probe: Transaction = {
+    id: 'probe', customerId: '', date: '', time: '12:00', category: category === 'Taxi' ? 'Transportation' : category,
+    amount: -amount, balanceAfter: 0, merchantId: '', mcc, source: 'sbank',
+  };
+  const basket = defaultBasketForTx(probe);
+  const e0 = (v: number) => `€${Math.round(v)}`;
+
+  if (basket === 'mandatory_regular' || basket === 'mandatory_irregular') {
+    return {
+      verdict: 'go', mood: 'deadpan', basket,
+      text: `${capitalise(what)} for ${e0(amount)} is a must-pay, not a treat. No budget check needed.`,
+      reasons: ['mandatory'],
+    };
+  }
+
+  const reasons: string[] = [];
+  let verdict = 'go' as PurchaseVerdict['verdict'];
+  const worse = (v: PurchaseVerdict['verdict']) => {
+    if (v === 'stop' || (v === 'think' && verdict === 'go')) verdict = v;
+  };
+
+  // 1. Bill money until payday
+  const safe = computeSafeToSpend(transactions, overrides, false);
+  const freeAfterBills = safe.currentBalance - safe.reservedRegular - safe.surpriseBuffer;
+  if (safe.currentBalance - amount < 0) {
+    worse('stop');
+    reasons.push(`you only have ${e0(safe.currentBalance)} on the account`);
+  } else if (amount > freeAfterBills) {
+    worse('stop');
+    reasons.push(`it would eat into the ${e0(safe.reservedRegular + safe.surpriseBuffer)} set aside for bills and surprises`);
+  } else if (amount > safe.safeWeekly) {
+    worse('think');
+    reasons.push(`it's more than your safe-to-spend this week (${e0(safe.safeWeekly)})`);
+  }
+
+  // 2. Budget
+  if (budget) {
+    const status = computeBudgetStatus(transactions, overrides, budget);
+    const lines = status.lines.filter((l) => l.key === basket || l.key === probe.category);
+    for (const l of lines) {
+      if (amount > l.left) {
+        worse(l.left <= 0 || amount > l.left + l.limit * 0.2 ? 'stop' : 'think');
+        reasons.push(
+          l.left <= 0
+            ? `your ${l.label.toLowerCase()} budget is already used up (${e0(l.spent)} of ${e0(l.limit)})`
+            : `only ${e0(l.left)} left in your ${l.label.toLowerCase()} budget (${e0(l.limit)}/month)`,
+        );
+      } else if (l.left - amount < l.limit * 0.1) {
+        worse('think');
+        reasons.push(`it would leave just ${e0(l.left - amount)} of your ${l.label.toLowerCase()} budget for ${status.daysLeft} days`);
+      }
+    }
+  }
+
+  // 3. Emergency fund
+  const ef = computeEmergencyFund(transactions, overrides);
+  if (basket === 'nice_to_have' && ef.status === 'low') {
+    worse('think');
+    reasons.push(`your emergency fund covers under a month (${ef.monthsCovered.toFixed(1)}), so that money could build your safety net`);
+  }
+
+  const mood: MentorMood = verdict === 'stop' ? 'bluff_caught' : verdict === 'think' ? 'suspicious' : 'impressed';
+  const label = basket === 'slips' ? 'a slip' : 'a nice-to-have';
+  const text =
+    verdict === 'go'
+      ? `${capitalise(what)} for ${e0(amount)}? That's ${label}, and it fits${budget ? ' your budget' : ''}. Go for it.`
+      : verdict === 'think'
+        ? `${capitalise(what)} for ${e0(amount)}: think twice. ${capitalise(reasons[0])}.`
+        : `${capitalise(what)} for ${e0(amount)}: I'd skip it. ${capitalise(reasons[0])}.`;
+  return { verdict, mood, basket, text, reasons };
+}
+
+function capitalise(s: string): string {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
+
+function addDays(date: string, days: number): string {
+  const t = Date.parse(`${date}T00:00:00Z`) + days * 86400000;
+  return new Date(t).toISOString().slice(0, 10);
 }
 
 export function detectSuspicionQuests(
@@ -276,7 +623,7 @@ export function detectSuspicionQuests(
           id: 'impulse_gadget',
           label: 'Impulse gadget (Be honest)',
           customLabel: 'Impulse Tech',
-          basket: 'slips',
+          basket: 'nice_to_have',
           xp: 40,
           coins: 30,
         },
@@ -548,14 +895,15 @@ export function answerFinanceQuery(params: {
         .reduce((s, t) => s + Math.abs(t.amount), 0),
     );
     const baskets = computeBaskets(visible, overrides, latestMonth);
+    const flexible = round2(baskets.slips + baskets.nice_to_have);
     const b = persona.benchmark;
 
     return {
-      mood: baskets.slips > b.slipsAvg ? 'suspicious' : 'impressed',
+      mood: flexible > b.slipsAvg ? 'suspicious' : 'impressed',
       text:
-        baskets.slips > b.slipsAvg
-          ? `Your slips are €${baskets.slips.toFixed(0)}/mo vs. €${b.slipsAvg} for ${b.ageGroup} in ${b.city} (Stats Finland). Restaurants alone hit €${restaurants.toFixed(0)}.`
-          : `You beat the ${b.city} ${b.ageGroup} average: €${baskets.slips.toFixed(0)} in slips vs. €${b.slipsAvg} Finnish peer average.`,
+        flexible > b.slipsAvg
+          ? `Your slips and nice-to-haves are €${flexible.toFixed(0)}/mo vs. €${b.slipsAvg} for ${b.ageGroup} in ${b.city} (Stats Finland). Restaurants alone hit €${restaurants.toFixed(0)}.`
+          : `You beat the ${b.city} ${b.ageGroup} average: €${flexible.toFixed(0)} in slips and nice-to-haves vs. €${b.slipsAvg} Finnish peer average.`,
       chart: {
         kind: 'peer_compare',
         title: `You vs. Stats Finland (${b.ageGroup}, ${b.city})`,
@@ -564,7 +912,7 @@ export function answerFinanceQuery(params: {
           { category: 'Restaurants', yours: restaurants, finlandAvg: b.restaurantsAvg },
           { category: 'Transport', yours: transport, finlandAvg: b.transportAvg },
           { category: 'Groceries', yours: groceries, finlandAvg: b.groceriesAvg },
-          { category: 'All Slips', yours: baskets.slips, finlandAvg: b.slipsAvg },
+          { category: 'Slips + Nice', yours: flexible, finlandAvg: b.slipsAvg },
         ],
       },
     };
@@ -626,7 +974,7 @@ export function answerFinanceQuery(params: {
     : 0;
   return {
     mood: slipPct > 22 ? 'suspicious' : 'deadpan',
-    text: `${latestMonth} total spend: €${baskets.totalSpend.toFixed(2)}. ${slipPct}% (€${baskets.slips.toFixed(2)}) slipped through your fingers. Ask about taxis, peers, safe-to-spend, or a 20% cutback.`,
+    text: `${latestMonth} total spend: €${baskets.totalSpend.toFixed(2)}. ${slipPct}% (€${baskets.slips.toFixed(2)}) slipped through your fingers; €${baskets.nice_to_have.toFixed(2)} went on nice-to-haves. Ask about taxis, peers, safe-to-spend, or a 20% cutback.`,
   };
 }
 

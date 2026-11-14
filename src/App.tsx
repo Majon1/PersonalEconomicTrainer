@@ -3,9 +3,15 @@ import { ChevronRight, ShieldCheck, Volume2, VolumeX } from 'lucide-react';
 import { BasketsMeter } from './components/BasketsMeter';
 import { FinanceChart } from './components/FinanceChart';
 import { LockerView } from './components/LockerView';
+import { BudgetView } from './components/BudgetView';
+import { FinlandWall, pctVsFinland } from './components/FinlandWall';
 import { PixelMentorScene } from './components/PixelMentorScene';
 import {
   computeBaskets,
+  checkPurchase,
+  computeBudgetStatus,
+  computeMoneyMood,
+  suggestBudget,
   detectSuspicionQuests,
   filterTransactions,
   getLatestMonthKey,
@@ -21,6 +27,8 @@ import type {
   ChartPayload,
   LabelOverride,
   MentorMood,
+  MoneyMoodLevel,
+  Budget,
   PlayerProgress,
   ShopItem,
   Transaction,
@@ -40,6 +48,8 @@ interface SavedUserState {
   overrides: LabelOverride[];
   resolvedQuestIds: string[];
   pledgedActive: boolean;
+  /** monthly limits for the "choose" baskets; null = no budget yet */
+  budget?: Budget | null;
 }
 
 function storageKey(customerId: string) {
@@ -55,7 +65,14 @@ interface ActiveTurn {
     months: number;
     label: string;
   };
+  /** Mikko asks whether to show the "You vs Finland" board */
+  offerCompare?: boolean;
+  /** category tapped on the You vs Finland wall */
+  pick?: string;
 }
+
+const COMPARE_OFFER =
+  'Curious how you stack up? Statistics Finland knows what other Finns your age spend. Want to compare?';
 
 function buildInitialState(customerId: string): SavedUserState {
   const startingXp = 280;
@@ -97,9 +114,17 @@ function loadState(customerId: string): SavedUserState {
 const QUICK_CHIPS = [
   { label: 'Taxis?', query: 'How much did I spend on taxis last month?' },
   { label: 'Safe/wk?', query: 'What is safe for me to spend this week?' },
+  { label: 'How am I doing?', query: 'How am I doing this month? Why are you in that mood?' },
+  { label: 'Can I buy it?', query: '' },
+  { label: 'Fund?', query: 'Do I have enough of an emergency fund?' },
   { label: 'Peers?', query: 'Compare me to Finnish peers' },
   { label: 'Netflix?', query: 'If Netflix went into an index fund' },
 ];
+
+// Status colours (good / warning / critical), always paired with an icon and label.
+const MOOD_COLOR: Record<MoneyMoodLevel, string> = { happy: '#15803d', mild: '#b45309', angry: '#b91c1c' };
+const MOOD_LABEL: Record<MoneyMoodLevel, string> = { happy: 'Doing well', mild: 'Could be better', angry: 'Rent at risk' };
+const EF_COLOR = { reached: '#15803d', building: '#d97706', low: '#b91c1c' } as const;
 
 export default function App() {
   const [customers, setCustomers] = useState<CustomerSummary[]>([]);
@@ -111,6 +136,7 @@ export default function App() {
   const [history, setHistory] = useState<{ role: 'user' | 'mentor'; text: string }[]>([]);
   const [userState, setUserState] = useState<SavedUserState | null>(null);
   const [lockerOpen, setLockerOpen] = useState(false);
+  const [budgetOpen, setBudgetOpen] = useState(false);
   const [muted, setMuted] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [lastShiftedBasket, setLastShiftedBasket] = useState<BasketKey | null>(
@@ -242,12 +268,54 @@ export default function App() {
   const activeQuest = activeQuests[0] ?? null;
   const xpInfo = xpProgressInLevel(progress?.xp ?? 0);
 
+  const moneyMood = useMemo(
+    () => computeMoneyMood(visibleTxs, userState?.overrides ?? [], latestMonth),
+    [visibleTxs, userState?.overrides, latestMonth],
+  );
+
+  const budget = userState?.budget ?? null;
+  const budgetSuggestion = useMemo(
+    () => suggestBudget(visibleTxs, userState?.overrides ?? []),
+    [visibleTxs, userState?.overrides],
+  );
+  const budgetStatus = useMemo(
+    () => (budget ? computeBudgetStatus(visibleTxs, userState?.overrides ?? [], budget, latestMonth) : null),
+    [budget, visibleTxs, userState?.overrides, latestMonth],
+  );
+
+  // What Mikko opens with, once per customer per session, most urgent first:
+  // 1. rent at risk  2. a budget that's used up or nearly  3. the Finland comparison offer.
+  useEffect(() => {
+    if (!ledgerReady || !customerId) return;
+    const key = `strainer_opening_${customerId}`;
+    try {
+      if (window.sessionStorage.getItem(key)) return;
+      window.sessionStorage.setItem(key, '1');
+    } catch {
+      // ignore storage errors
+    }
+    const worst = budgetStatus?.worst;
+    if (moneyMood.level === 'angry') {
+      setCustomTurn({ mood: 'bluff_caught', text: moneyMood.headline });
+    } else if (worst) {
+      setCustomTurn({
+        mood: worst.status === 'over' ? 'bluff_caught' : 'suspicious',
+        text:
+          worst.status === 'over'
+            ? `Your ${worst.label.toLowerCase()} budget is blown: €${worst.spent.toFixed(0)} of €${worst.limit.toFixed(0)}. Hold off on ${worst.label.toLowerCase()} until next month.`
+            : `Heads up: €${Math.max(0, worst.left).toFixed(0)} left of your ${worst.label.toLowerCase()} budget with ${budgetStatus?.daysLeft} days to go. Check with me before you buy.`,
+      });
+    } else {
+      setCustomTurn({ mood: 'pointing', text: COMPARE_OFFER, offerCompare: true });
+    }
+  }, [ledgerReady, customerId, moneyMood, budgetStatus]);
+
   if (loadError || !userState || !progress || !ledgerReady || !customerId) {
     return (
-      <div className="min-h-screen w-full flex items-center justify-center sm:p-4">
+      <div className="min-h-[100dvh] w-full flex items-center justify-center framed:p-4">
         <div
           data-testid="phone-shell"
-          className="relative w-full sm:w-[398px] h-screen sm:h-[812px] sm:max-h-[94vh] flex items-center justify-center px-6 text-center sm:border-[3px]"
+          className="relative w-full max-w-[560px] framed:w-[398px] h-[100dvh] framed:h-[812px] framed:max-h-[94vh] flex items-center justify-center px-6 text-center framed:border-[3px]"
           style={{
             backgroundColor: 'var(--app-bg)',
             borderColor: 'var(--app-border)',
@@ -267,13 +335,104 @@ export default function App() {
       : customTurn.mood
     : activeQuest
       ? 'suspicious'
-      : 'impressed';
+      : moneyMood.mentorMood;
 
   const activeSpeech: string = customTurn
     ? customTurn.text
     : activeQuest
       ? activeQuest.prompt
-      : 'All flagged items checked. Ask me about taxis, safe-to-spend, or what-ifs.';
+      : `${moneyMood.headline} Ask me about taxis, safe-to-spend, or what-ifs.`;
+
+  const handleSaveBudget = (next: Budget | null) => {
+    const firstTime = !userState.budget && next;
+    soundFx.playHonestChime();
+    setUserState((prev) => {
+      if (!prev) return prev;
+      const xp = prev.progress.xp + (firstTime ? 20 : 0);
+      return { ...prev, budget: next, progress: { ...prev.progress, xp, level: levelFromXp(xp) } };
+    });
+    setBudgetOpen(false);
+    setCustomTurn(
+      next
+        ? {
+            mood: 'impressed',
+            text: `Budget set: €${next.slips} for slips and €${next.nice_to_have} for nice-to-haves a month.${firstTime ? ' +20 XP.' : ''} Ask me before you buy and I'll tell you if it fits.`,
+          }
+        : { mood: 'deadpan', text: 'Budget removed. I will still flag anything that puts the rent at risk.' },
+    );
+  };
+
+  const handleCheckPurchase = (amount: number, category: string, what: string) => {
+    const v = checkPurchase({ transactions: visibleTxs, overrides: userState.overrides, budget, amount, category, what });
+    if (v.verdict === 'stop') soundFx.playBluffBuzz();
+    else soundFx.playHonestChime();
+    setBudgetOpen(false);
+    setCustomTurn({
+      mood: v.mood,
+      text: `${v.verdict === 'go' ? '👍' : v.verdict === 'think' ? '🤔' : '✋'} ${v.text}${v.reasons.length > 1 ? ` Also: ${v.reasons.slice(1).join('; ')}.` : ''}`,
+    });
+  };
+
+  const handleCompareYes = async () => {
+    soundFx.playClick();
+    setCustomTurn({ mood: 'deadpan', text: 'Pulling the Statistics Finland numbers…' });
+    try {
+      const res = await fetch(`/api/customers/${customerId}/compare`);
+      const board = await res.json();
+      if (!res.ok) throw new Error(board.error || 'No comparison available');
+      const diff = board.yoursTotal - board.finlandTotal;
+      const top = [...board.rows].sort(
+        (a: { yours: number; finland: number }, b: { yours: number; finland: number }) =>
+          b.yours - b.finland - (a.yours - a.finland),
+      )[0];
+      const bottom = [...board.rows].sort(
+        (a: { yours: number; finland: number }, b: { yours: number; finland: number }) =>
+          a.yours - a.finland - (b.yours - b.finland),
+      )[0];
+      setCustomTurn({
+        mood: 'pointing',
+        text:
+          `You spend €${Math.abs(diff).toFixed(0)}/month ${diff > 0 ? 'more' : 'less'} than other Finns aged ${board.ageGroup}. ` +
+          `Biggest gap: ${top.category} (+€${(top.yours - top.finland).toFixed(0)}). ` +
+          `You're under them in ${board.lessCount} categor${board.lessCount === 1 ? 'y' : 'ies'}, best in ${bottom.category}.`,
+        chart: board,
+      });
+    } catch (error) {
+      setCustomTurn({ mood: 'deadpan', text: error instanceof Error ? error.message : 'Could not load the comparison.' });
+    }
+  };
+
+  const handleShowMood = () => {
+    soundFx.playClick();
+    const r = moneyMood.reasons;
+    const lines = [...r.bad, ...r.meh, ...r.good.slice(0, 2)].map((x) => x.charAt(0).toUpperCase() + x.slice(1));
+    setCustomTurn({
+      mood: moneyMood.mentorMood,
+      text: `${MOOD_LABEL[moneyMood.level]} (${moneyMood.score}/100) in ${moneyMood.month}. ${lines.join('. ')}.`,
+    });
+  };
+
+  const handleShowEmergencyFund = () => {
+    soundFx.playClick();
+    const ef = moneyMood.emergency;
+    setCustomTurn({
+      mood: 'pointing',
+      text:
+        ef.status === 'reached'
+          ? `Emergency fund: €${ef.balance.toFixed(0)} covers ${ef.monthsCovered.toFixed(1)} months of spending. Goal of ${ef.goalMonths} months reached.`
+          : `Emergency fund: €${ef.balance.toFixed(0)} covers ${ef.monthsCovered.toFixed(1)} months. ${ef.goalMonths} months would be €${ef.target.toFixed(0)}, so €${ef.missing.toFixed(0)} to go. Small, steady transfers after payday get you there.`,
+      chart: {
+        kind: 'emergency_fund',
+        title: 'Emergency fund',
+        balance: ef.balance,
+        target: ef.target,
+        goalMonths: ef.goalMonths,
+        monthsCovered: ef.monthsCovered,
+        monthlyOutgoings: ef.monthlyOutgoings,
+        status: ef.status,
+      },
+    });
+  };
 
   const handleResetDemo = () => {
     soundFx.playClick();
@@ -397,6 +556,7 @@ export default function App() {
           customerId,
           query: trimmed,
           overrides: userState.overrides,
+          budget: userState.budget ?? null,
           history,
         }),
       });
@@ -511,38 +671,30 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center sm:p-4">
+    <div className="min-h-[100dvh] w-full flex items-center justify-center framed:p-4">
       {/* Typical Mobile Phone Frame (398x812) */}
       <div
         data-testid="phone-shell"
-        className="relative w-full sm:w-[398px] h-screen sm:h-[812px] sm:max-h-[94vh] flex flex-col overflow-hidden sm:border-[3px]"
+        className="relative w-full max-w-[560px] framed:w-[398px] h-[100dvh] framed:h-[812px] framed:max-h-[94vh] flex flex-col overflow-hidden framed:border-[3px]"
         style={{
           backgroundColor: 'var(--app-bg)',
           borderColor: 'var(--app-border)',
           boxShadow: 'var(--pixel-shadow)',
         }}
       >
-        {/* FULL-BLEED ANIMATED MIKKO ROOM BACKGROUND */}
-        <PixelMentorScene
-          mood={activeMood}
-          styleId={progress.equippedStyle}
-          slipsSharePct={slipsSharePct}
-          streakWeeks={progress.streakWeeks}
-          variant="background"
-        />
-
         {/* FOREGROUND HUD LAYER */}
         <div className="relative z-10 flex flex-col h-full">
           {/* Top S-mobiili Header + Single-Row Baskets */}
           <header
-            className="h-11 px-3 flex items-center justify-between gap-2 border-b-2 shrink-0"
+            className="min-h-11 px-3 flex items-center justify-between gap-2 border-b-2 shrink-0"
             style={{
+              paddingTop: 'env(safe-area-inset-top)',
               backgroundColor: 'var(--app-surface)',
               borderColor: 'var(--app-border)',
             }}
           >
             <div className="flex items-center gap-1.5 min-w-0">
-              <span className="font-num font-bold text-xs tracking-wider whitespace-nowrap">
+              <span className="font-num font-bold text-xs tracking-wider whitespace-nowrap max-[429px]:hidden">
                 S-MOBIILI
               </span>
               <label className="sr-only" htmlFor="customer-picker">Customer</label>
@@ -582,7 +734,7 @@ export default function App() {
                 style={{ backgroundColor: 'var(--app-surface-muted)' }}
               >
                 <ShieldCheck className="w-3.5 h-3.5" />
-                <span>Locker</span>
+                <span className="max-[359px]:sr-only">Locker</span>
               </button>
 
               <button
@@ -606,11 +758,127 @@ export default function App() {
             lastShiftedBasket={lastShiftedBasket}
           />
 
-          {/* OPEN STAGE WINDOW SO MIKKO & POINTING HAND STAY CLEAR */}
-          <div className="flex-1 min-h-[215px]" aria-hidden="true" />
+          {/* Money mood + emergency fund: tap for Mikko's take */}
+          <div
+            className="grid grid-cols-2 gap-1 px-2 py-1.5 short:py-1 border-b-2 shrink-0"
+            style={{ backgroundColor: 'var(--app-surface)', borderColor: 'var(--app-border)' }}
+          >
+            <button
+              type="button"
+              data-testid="money-mood"
+              onClick={handleShowMood}
+              className="px-1.5 py-1 flex items-center gap-1.5 min-w-0 text-left cursor-pointer"
+              style={{ backgroundColor: 'var(--app-surface-muted)', border: `1px solid ${MOOD_COLOR[moneyMood.level]}` }}
+              aria-label={`Money mood ${moneyMood.level}, score ${moneyMood.score} of 100. Tap for details.`}
+            >
+              <span
+                className="w-4 h-4 shrink-0 grid place-items-center text-[10px] font-bold text-white"
+                style={{ backgroundColor: MOOD_COLOR[moneyMood.level] }}
+                aria-hidden="true"
+              >
+                {moneyMood.level === 'happy' ? '✓' : moneyMood.level === 'mild' ? '–' : '!'}
+              </span>
+              <span className="text-[11px] font-semibold truncate">{MOOD_LABEL[moneyMood.level]}</span>
+              <span className="font-num text-[11px] font-bold ml-auto shrink-0">{moneyMood.score}</span>
+            </button>
+            <button
+              type="button"
+              data-testid="emergency-fund"
+              onClick={handleShowEmergencyFund}
+              className="px-1.5 py-1 min-w-0 text-left cursor-pointer"
+              style={{ backgroundColor: 'var(--app-surface-muted)', border: '1px solid var(--app-border)' }}
+              aria-label={`Emergency fund ${moneyMood.emergency.monthsCovered.toFixed(1)} of ${moneyMood.emergency.goalMonths} months. Tap for details.`}
+            >
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[11px] font-semibold truncate"><span className="max-[319px]:hidden">Emergency fund</span><span className="min-[320px]:hidden">Fund</span></span>
+                <span className="font-num text-[11px] font-bold shrink-0">
+                  {Math.min(99, moneyMood.emergency.monthsCovered).toFixed(1)}/{moneyMood.emergency.goalMonths} mo
+                </span>
+              </div>
+              <div className="h-1.5 mt-0.5" style={{ backgroundColor: 'var(--app-surface)', border: '1px solid var(--app-border)' }}>
+                <div
+                  className="h-full"
+                  style={{
+                    width: `${moneyMood.emergency.progressPct}%`,
+                    backgroundColor: EF_COLOR[moneyMood.emergency.status],
+                  }}
+                />
+              </div>
+            </button>
+          </div>
+
+          {/* Budget: what's left this month. Tap to set, edit, or check a purchase. */}
+          <button
+            type="button"
+            data-testid="budget-bar"
+            onClick={() => {
+              soundFx.playClick();
+              setBudgetOpen(true);
+            }}
+            className="px-2 py-1 border-b-2 shrink-0 text-left cursor-pointer"
+            style={{ backgroundColor: 'var(--app-surface)', borderColor: 'var(--app-border)' }}
+            aria-label={budgetStatus ? 'Budget this month. Tap to edit or check a purchase.' : 'Set a monthly budget'}
+          >
+            {budgetStatus && budgetStatus.lines.length ? (
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-[11px] font-semibold shrink-0">Budget</span>
+                {budgetStatus.lines.slice(0, 2).map((l) => (
+                  <span key={l.key} className="flex-1 min-w-0">
+                    <span className="flex justify-between gap-1 text-[10px]">
+                      <span className="truncate">{l.key === 'nice_to_have' ? 'Nice' : l.label}</span>
+                      <span className="font-num font-bold shrink-0">€{Math.max(0, l.left).toFixed(0)} left</span>
+                    </span>
+                    <span className="block h-1.5" style={{ backgroundColor: 'var(--app-surface-muted)', border: '1px solid var(--app-border)' }}>
+                      <span
+                        className="block h-full"
+                        style={{
+                          width: `${Math.min(100, l.pct)}%`,
+                          backgroundColor: l.status === 'over' ? '#b91c1c' : l.status === 'close' ? '#d97706' : '#15803d',
+                        }}
+                      />
+                    </span>
+                  </span>
+                ))}
+                <ChevronRight className="w-3.5 h-3.5 shrink-0" />
+              </div>
+            ) : (
+              <div className="flex items-center justify-between text-[11px] font-semibold">
+                <span>Set a monthly budget, and Mikko keeps you on it</span>
+                <ChevronRight className="w-3.5 h-3.5 shrink-0" />
+              </div>
+            )}
+          </button>
+
+          {/* OPEN STAGE WINDOW: Mikko's room, anchored to the desk edge */}
+          <div className="relative flex-1 min-h-[120px] framed:min-h-[200px] short:hidden">
+            <div aria-hidden="true">
+              <PixelMentorScene
+                mood={activeMood}
+                styleId={progress.equippedStyle}
+                slipsSharePct={slipsSharePct}
+                streakWeeks={progress.streakWeeks}
+                variant="background"
+              />
+            </div>
+            {/* You vs Finland, pinned to the wall around Mikko */}
+            {customTurn?.chart?.kind === 'finland_board' && (
+              <FinlandWall
+                board={customTurn.chart}
+                picked={customTurn.pick}
+                onPick={handlePickCategory}
+                onClose={() => {
+                  soundFx.playClick();
+                  setCustomTurn(null);
+                }}
+              />
+            )}
+          </div>
 
           {/* LOWER FLOATING RPG DIALOGUE OR CHART ZONE OVER DESK */}
-          <main className="px-3 pb-2 space-y-1.5 min-h-0 overflow-y-auto">
+          <main
+            className="px-3 pt-1.5 pb-2 space-y-1.5 min-h-0 shrink overflow-y-auto short:flex-1"
+            style={{ backgroundColor: '#6f451f' }}
+          >
             {levelUpToast && (
               <div
                 data-testid="level-up-banner"
@@ -651,13 +919,16 @@ export default function App() {
                     {activeQuest ? 'Next' : 'Close'}
                   </button>
                 </div>
-                <FinanceChart
-                  chart={customTurn.chart}
-                  onChangeWhatIfAsset={handleChangeWhatIfAsset}
-                  onChangeWhatIfMonths={handleChangeWhatIfMonths}
-                  onPledgeCutback={handlePledgeCutback}
-                  pledgedActive={userState.pledgedActive}
-                />
+                {/* The Finland board lives on the wall; only short (landscape) screens, where the room is hidden, show it as a table here */}
+                <div className={customTurn.chart.kind === 'finland_board' ? 'hidden short:block' : ''}>
+                  <FinanceChart
+                    chart={customTurn.chart}
+                    onChangeWhatIfAsset={handleChangeWhatIfAsset}
+                    onChangeWhatIfMonths={handleChangeWhatIfMonths}
+                    onPledgeCutback={handlePledgeCutback}
+                    pledgedActive={userState.pledgedActive}
+                  />
+                </div>
               </div>
             ) : (
               <section
@@ -725,7 +996,33 @@ export default function App() {
                   </div>
                 )}
 
-                {!customTurn?.offerWhatIf && activeQuest && (
+                {customTurn?.offerCompare && (
+                  <div className="grid grid-cols-2 gap-2" data-testid="compare-offer">
+                    <button
+                      type="button"
+                      onClick={handleCompareYes}
+                      className="min-h-[40px] px-3 text-xs font-semibold pixel-btn cursor-pointer flex items-center justify-center gap-1"
+                      style={{ backgroundColor: 'var(--app-accent)', color: 'var(--app-accent-fg)' }}
+                    >
+                      <span>Yes, show me</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundFx.playClick();
+                        setCustomTurn(null);
+                      }}
+                      className="min-h-[40px] px-3 text-xs font-semibold pixel-btn cursor-pointer"
+                      style={{ backgroundColor: 'var(--app-surface-muted)', color: 'var(--app-text)' }}
+                    >
+                      Not now
+                    </button>
+                  </div>
+                )}
+
+                {/* Quest answers only when Mikko is asking the quest, not under another message */}
+                {!customTurn && activeQuest && (
                   <div className="space-y-1.5" data-testid="suspicion-quest">
                     {activeQuest.choices.map((ch) => (
                       <button
@@ -747,7 +1044,7 @@ export default function App() {
                   </div>
                 )}
 
-                {customTurn && !customTurn.offerWhatIf && (
+                {customTurn && !customTurn.offerWhatIf && !customTurn.offerCompare && (
                   <div className="flex justify-end">
                     <button
                       type="button"
@@ -762,6 +1059,18 @@ export default function App() {
                     </button>
                   </div>
                 )}
+
+                {!customTurn && !activeQuest && (
+                  <button
+                    type="button"
+                    onClick={handleCompareYes}
+                    className="w-full min-h-[38px] px-3 text-xs font-semibold pixel-btn cursor-pointer flex items-center justify-between gap-2"
+                    style={{ backgroundColor: 'var(--app-surface-muted)', color: 'var(--app-text)' }}
+                  >
+                    <span>Compare me with other Finns</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </section>
             )}
           </main>
@@ -772,14 +1081,21 @@ export default function App() {
             style={{
               backgroundColor: 'var(--app-surface)',
               borderColor: 'var(--app-border)',
+              paddingBottom: 'calc(0.625rem + env(safe-area-inset-bottom))',
             }}
           >
-            <div className="flex gap-1.5 overflow-x-auto">
+            <div className="flex gap-1.5 overflow-x-auto short:hidden">
               {QUICK_CHIPS.map((chip) => (
                 <button
                   key={chip.label}
                   type="button"
-                  onClick={() => handleSendQuery(chip.query)}
+                  onClick={() =>
+                    chip.label === 'Peers?'
+                      ? handleCompareYes()
+                      : chip.label === 'Can I buy it?'
+                        ? (soundFx.playClick(), setBudgetOpen(true))
+                        : handleSendQuery(chip.query)
+                  }
                   disabled={asking}
                   className="px-2 py-1 text-[11px] font-semibold pixel-btn cursor-pointer whitespace-nowrap shrink-0"
                   style={{
@@ -827,6 +1143,17 @@ export default function App() {
         </div>
 
         {/* Slide-Over Locker Drawer */}
+        {budgetOpen && (
+          <BudgetView
+            budget={budget}
+            suggestion={budgetSuggestion}
+            status={budgetStatus}
+            onSave={handleSaveBudget}
+            onCheckPurchase={handleCheckPurchase}
+            onClose={() => setBudgetOpen(false)}
+          />
+        )}
+
         {lockerOpen && (
           <LockerView
             progress={progress}

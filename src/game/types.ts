@@ -1,6 +1,85 @@
 export type PersonaId = 'mikko' | 'aino';
 
-export type BasketKey = 'mandatory_regular' | 'mandatory_irregular' | 'slips';
+/**
+ * Four baskets: two you must pay, two you choose.
+ *  mandatory_regular   rent, bills, groceries, commuting
+ *  mandatory_irregular health, repairs, appliances
+ *  slips               small habits that slip through your fingers (<= 40 €: coffees, quick lunches, taxis, parking)
+ *  nice_to_have        bigger extras you could live without if money got tight (travel, hobbies, events, shopping, dinners out)
+ */
+export type BasketKey = 'mandatory_regular' | 'mandatory_irregular' | 'slips' | 'nice_to_have';
+
+export type MoneyMoodLevel = 'happy' | 'mild' | 'angry';
+
+/** Monthly limits the user sets for the two "choose" baskets, plus optional per-category limits. */
+export interface Budget {
+  slips: number;
+  nice_to_have: number;
+  categories: Record<string, number>;
+}
+
+export interface BudgetLine {
+  key: string; // 'slips' | 'nice_to_have' | category name
+  label: string;
+  limit: number;
+  spent: number;
+  left: number;
+  pct: number;
+  projected: number; // at this pace by the end of the month
+  status: 'ok' | 'close' | 'over';
+}
+
+export interface BudgetStatus {
+  month: string;
+  today: string;
+  daysLeft: number;
+  lines: BudgetLine[];
+  /** the line most in trouble, if any */
+  worst: BudgetLine | null;
+}
+
+export interface PurchaseVerdict {
+  verdict: 'go' | 'think' | 'stop';
+  mood: MentorMood;
+  basket: BasketKey;
+  text: string;
+  reasons: string[];
+}
+
+export interface RiskyPurchase {
+  txId: string;
+  date: string;
+  label: string;
+  basket: BasketKey;
+  amount: number;
+  balanceAfter: number;
+  billsDueBeforeIncome: number;
+}
+
+export interface EmergencyFund {
+  month: string;
+  goalMonths: number;
+  monthlyOutgoings: number;
+  target: number;
+  alternativeTargetPay: number;
+  balance: number;
+  monthsCovered: number;
+  progressPct: number;
+  missing: number;
+  status: 'reached' | 'building' | 'low';
+}
+
+export interface MoneyMood {
+  month: string;
+  level: MoneyMoodLevel;
+  /** Mikko's face for this mood: angry = bluff_caught, mild = suspicious, happy = impressed */
+  mentorMood: MentorMood;
+  score: number;
+  headline: string;
+  reasons: { bad: string[]; meh: string[]; good: string[] };
+  risky: RiskyPurchase[];
+  emergency: EmergencyFund;
+}
 
 export type MentorMood =
   | 'deadpan'
@@ -87,8 +166,11 @@ export interface BasketSummary {
   mandatory_regular: number;
   mandatory_irregular: number;
   slips: number;
+  nice_to_have: number;
   totalSpend: number;
   income: number;
+  /** money moved to investments: not spending */
+  saved: number;
 }
 
 export interface StatFinBenchmark {
@@ -168,6 +250,34 @@ export type ChartPayload =
       surpriseBuffer: number;
       safeWeekly: number;
       dailyAllowance: number;
+    }
+  | {
+      kind: 'finland_board';
+      title: string;
+      ageGroup: string;
+      period: string;
+      priceNote: string;
+      rows: {
+        category: string;
+        yours: number;
+        finland: number;
+        verdict: 'more' | 'less' | 'similar';
+      }[];
+      yoursTotal: number;
+      finlandTotal: number;
+      lessCount: number;
+      source: string;
+      caveat: string;
+    }
+  | {
+      kind: 'emergency_fund';
+      title: string;
+      balance: number;
+      target: number;
+      goalMonths: number;
+      monthsCovered: number;
+      monthlyOutgoings: number;
+      status: 'reached' | 'building' | 'low';
     }
   | {
       kind: 'peer_compare';
