@@ -14,6 +14,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 if (existsSync(join(ROOT, ".env"))) process.loadEnvFile(join(ROOT, ".env"));
 
 const PORT = Number(process.env.PORT || 3000);
+const HOST = "0.0.0.0";
 const pool = createPool();
 const benchmarks = await loadBenchmarks(pool);
 const index = await loadCustomerIndex(pool);
@@ -97,7 +98,7 @@ if (process.env.NODE_ENV === "production" && existsSync(join(ROOT, "dist", "inde
   app.use(vite.middlewares);
 }
 
-app.listen(PORT, "0.0.0.0", () => {
+app.listen(PORT, HOST, () => {
   const model = process.env.GEMINI_MODEL || "gemini-4-hydrogen";
   console.log(`Personal Economic Trainer at http://localhost:${PORT}`);
   if (HOST === "0.0.0.0") console.log(`Also reachable on your network: http://<this computer's IP>:${PORT}`);
