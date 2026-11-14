@@ -1,7 +1,14 @@
 import { createEngine, BASKETS, SPEND_KEYS, describe, defaultCategoryBaskets } from "./finance.js";
+import { avatarSvg, MOOD_TEXT } from "./avatar.js";
 
 // ---------- load data ----------
-const DATA = await fetch("data/customer.json").then((r) => r.json());
+// Which customer: ?customer=ID, then the last one picked, then the default.
+const INDEX = await fetch("data/customers/index.json").then((r) => r.json());
+const known = new Set(INDEX.customers.map((c) => c.id));
+let picked = new URLSearchParams(location.search).get("customer");
+if (!known.has(picked)) { try { picked = localStorage.getItem("pet.customer"); } catch { picked = null; } }
+export const customerId = known.has(picked) ? picked : INDEX.default;
+const DATA = await fetch(`data/customers/${customerId}.json`).then((r) => r.json());
 const BENCH = await fetch("/api/benchmarks").then((r) => (r.ok ? r.json() : null)).catch(() => null);
 
 // ---------- user's own basket rules (MyData) ----------
@@ -65,8 +72,19 @@ function priorAverage(month) {
 // ---------- header ----------
 function renderHeader() {
   const c = DATA.customer;
-  $("who").innerHTML = `<span>${esc(c.id)}</span><span>Age ${c.age}</span><span>Postal code ${esc(c.postalCode)}</span>`;
+  $("who").innerHTML = `<span>Age ${c.age}</span><span>Postal code ${esc(c.postalCode)}</span>`;
   $("asOf").textContent = `Based on ${E.txs.length.toLocaleString("en-IE")} transactions from ${dayName(E.firstDate)} to ${dayName(E.today)}.`;
+  const cs = $("customerSelect");
+  cs.innerHTML = INDEX.customers.map((x) => `<option value="${esc(x.id)}">${esc(x.id)} · age ${x.age}</option>`).join("");
+  cs.value = customerId;
+  cs.addEventListener("change", () => {
+    try { localStorage.setItem("pet.customer", cs.value); } catch { /* private mode */ }
+    const u = new URL(location.href);
+    u.searchParams.set("customer", cs.value);
+    u.searchParams.delete("ask");
+    location.href = u.toString();
+  });
+
   const sel = $("monthSelect");
   sel.innerHTML = [...E.months].reverse().map((m) => `<option value="${m}">${monthName(m)}</option>`).join("");
   sel.value = state.month;
@@ -173,6 +191,45 @@ function renderCategories(s) {
     const g = groups[row.dataset.i];
     hover(row, `<div class="tt-title">${esc(g.label)}</div>${ttRow(BASKETS[g.basket].name, fmt2(g.amount), color(g.basket))}${ttRow("Transactions", g.n)}${ttRow("Share of spending", pct(g.amount / s.spend))}`);
   });
+}
+
+// ---------- money buddy ----------
+const MOOD_GLYPH = { happy: "✓", mild: "–", angry: "!" };
+const MOOD_COLOR = { happy: "#0ca30c", mild: "#fab219", angry: "#d03b3b" };
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+let currentMood = null;
+export const getMood = () => currentMood;
+
+function renderBuddy() {
+  const md = E.mood(state.month);
+  currentMood = md;
+  const t = MOOD_TEXT[md.mood];
+  $("buddyFigure").innerHTML = avatarSvg(md.mood, 132, `Money buddy is ${md.mood} about ${monthName(state.month)}`);
+  $("buddyTitle").textContent = t.title;
+  $("buddyLine").textContent = `${monthName(state.month)}: ${t.line}`;
+  const items = [
+    ...md.reasons.bad.map((r) => ["bad", "✕", r]),
+    ...md.reasons.meh.map((r) => ["meh", "!", r]),
+    ...md.reasons.good.slice(0, md.mood === "happy" ? 3 : 2).map((r) => ["good", "✓", r]),
+  ];
+  $("buddyReasons").innerHTML = items.map(([cls, g, r]) =>
+    `<li><span class="ico ${cls}" aria-hidden="true">${g}</span><span>${esc(cap(r))}</span></li>`).join("");
+  $("buddyScore").innerHTML = `<div class="label">Money mood score</div>
+    <div class="score-row"><span class="score-value">${md.score}</span><span class="muted">/ 100 · ${md.mood}</span></div>
+    <div class="score-track"><div class="score-fill" style="width:${md.score}%;background:${MOOD_COLOR[md.mood]}"></div></div>`;
+
+  const strip = $("moodStrip");
+  strip.innerHTML = E.months.map((m) => {
+    const x = E.mood(m);
+    return `<button class="mood-dot ${x.mood} ${m === state.month ? "sel" : ""}" data-m="${m}"
+      aria-label="${monthName(m)}: ${x.mood}, score ${x.score}">${MOOD_GLYPH[x.mood]}</button>`;
+  }).join("");
+  strip.querySelectorAll(".mood-dot").forEach((b) => {
+    const x = E.mood(b.dataset.m);
+    hover(b, `<div class="tt-title">${monthName(b.dataset.m)}</div>${ttRow(cap(x.mood), `${x.score}/100`, MOOD_COLOR[x.mood])}`);
+    b.addEventListener("click", () => setMonth(b.dataset.m));
+  });
+  document.dispatchEvent(new CustomEvent("mood-change", { detail: md }));
 }
 
 // ---------- where it really goes ----------
@@ -510,6 +567,7 @@ function renderBalanceChart() {
 function renderMonth() {
   const s = E.MONTH_STATS[state.month];
   const avg = priorAverage(state.month);
+  renderBuddy();
   renderHeadline(s, avg);
   renderBaskets(s, avg);
   renderCategories(s);
@@ -528,7 +586,7 @@ function rebuild() {
 export function applyDashboardAction(a) {
   if (a.month) setMonth(a.month);
   if (a.basket_filter) { state.filter = a.basket_filter; renderTransactions(); }
-  const target = a.section && { status: "sec-status", baskets: "sec-baskets", habits: "sec-habits", monthly: "sec-monthly", categories: "sec-categories",
+  const target = a.section && { status: "sec-status", buddy: "sec-buddy", baskets: "sec-baskets", habits: "sec-habits", monthly: "sec-monthly", categories: "sec-categories",
     finland: "sec-finland", transactions: "sec-transactions", mydata: "sec-mydata" }[a.section];
   if (target) $(target)?.scrollIntoView({ behavior: "smooth", block: "start" });
 }

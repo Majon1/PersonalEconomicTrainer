@@ -97,6 +97,17 @@ export const declarations = [
     },
   },
   {
+    name: "get_mood",
+    description:
+      "The money buddy's mood for a month (happy, mild or angry), its 0-100 score and the reasons: purchases the user " +
+      "couldn't afford (with balance left and rent/bills still due), overspending, jumps in everyday spending, and what " +
+      "went well. Use when the user asks about the buddy/avatar, its mood, or how they did in a month.",
+    parameters: {
+      type: "object",
+      properties: { month: { type: "string", description: "YYYY-MM. Default: the month shown on the dashboard." } },
+    },
+  },
+  {
     name: "compare_to_finland",
     description:
       "Compare the user's monthly spending per category with Statistics Finland's Household Budget Survey for people " +
@@ -138,7 +149,7 @@ export const declarations = [
       properties: {
         month: { type: "string", description: "Month to show, YYYY-MM." },
         basket_filter: { type: "string", enum: ["all", "regular", "irregular", "everyday", "extras", "money"] },
-        section: { type: "string", enum: ["status", "baskets", "habits", "monthly", "categories", "finland", "transactions", "mydata"] },
+        section: { type: "string", enum: ["status", "buddy", "baskets", "habits", "monthly", "categories", "finland", "transactions", "mydata"] },
       },
     },
   },
@@ -155,6 +166,8 @@ export function runTool(engine, name, args = {}) {
       return { result: engine.safeToSpend(args) };
     case "what_if":
       return { result: engine.whatIf(args) };
+    case "get_mood":
+      return { result: engine.mood(args.month || engine.viewMonth || undefined) };
     case "find_money_leaks":
       return { result: engine.habits(args) };
     case "compare_to_finland":

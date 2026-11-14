@@ -277,6 +277,95 @@ export function createEngine(data, { overrides = {}, benchmarks = null } = {}) {
     return a;
   }
 
+  // ---------- mood: how your financial decisions look ----------
+  // A "risky" purchase is a flexible one (everyday or extras) that leaves you
+  // with less than the rent and bills still due before your next income, or
+  // that takes the balance below zero.
+  const isIncome = (t) => t.basket === "income";
+  const isBill = (t) => t.type === "housing_payment" || t.type === "utilities_payment";
+  const risky = [];
+  txs.forEach((t, i) => {
+    if (t.basket !== "everyday" && t.basket !== "extras") return;
+    let due = 0, nextIncome = null;
+    for (let j = i + 1; j < txs.length; j++) {
+      const u = txs[j];
+      if (isIncome(u)) { nextIncome = u.date; break; }
+      if (u.date > addDays(t.date, 31)) break;
+      if (isBill(u)) due -= u.amount;
+    }
+    if (t.balance < 0 || t.balance < due) {
+      risky.push({
+        date: t.date, what: describe(t), basket: t.basket, amount_eur: r2(-t.amount),
+        balance_after_eur: r2(t.balance), bills_due_before_next_income_eur: r2(due), next_income: nextIncome,
+      });
+    }
+  });
+
+  /** Mood for one month: happy, mild or angry, with the reasons behind it. */
+  function mood(month = months[months.length - 1]) {
+    if (!MONTH_STATS[month]) return { error: `No data for ${month}` };
+    const s = MONTH_STATS[month];
+    const i = months.indexOf(month);
+    const prior = months.slice(Math.max(0, i - 12), i).map((m) => MONTH_STATS[m]);
+    const avg = (k) => (prior.length ? prior.reduce((a, x) => a + x[k], 0) / prior.length : s[k]);
+    const mandatory = avg("regular") + avg("irregular") || s.regular + s.irregular;
+    const flex = s.everyday + s.extras;
+    const net = s.income - s.spend;
+    const savingsRate = s.income > 0 ? net / s.income : null;
+    const buffer = mandatory ? s.endBalance / mandatory : null;
+    const monthRisky = risky.filter((r) => r.date.startsWith(month));
+    const negativeDays = new Set(txs.filter((t) => t.date.startsWith(month) && t.balance < 0).map((t) => t.date)).size;
+
+    const bad = [], meh = [], good = [];
+    const e0 = (v) => `${Math.round(v).toLocaleString("en-IE")} €`;
+    const day = (d) => new Date(`${d}T00:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+    if (monthRisky.length) {
+      // prefer an example where rent/bills were still due; else the deepest overdraft
+      const billCases = monthRisky.filter((r) => r.bills_due_before_next_income_eur > r.balance_after_eur && r.balance_after_eur >= 0);
+      const n = `${monthRisky.length} purchase${monthRisky.length > 1 ? "s" : ""} you couldn't really afford`;
+      if (billCases.length) {
+        const w = billCases.reduce((a, b) => (b.bills_due_before_next_income_eur - b.balance_after_eur > a.bills_due_before_next_income_eur - a.balance_after_eur ? b : a));
+        bad.push(`${n}, e.g. ${w.what} for ${e0(w.amount_eur)} on ${day(w.date)} left you ${e0(w.balance_after_eur)} with ${e0(w.bills_due_before_next_income_eur)} of rent and bills still to pay`);
+      } else {
+        const w = monthRisky.reduce((a, b) => (b.balance_after_eur < a.balance_after_eur ? b : a));
+        bad.push(`${n}, e.g. ${w.what} for ${e0(w.amount_eur)} on ${day(w.date)} took your balance to ${e0(w.balance_after_eur)}`);
+      }
+    }
+    if (negativeDays && flex > 0) bad.push(`your account was in the red on ${negativeDays} day${negativeDays > 1 ? "s" : ""}`);
+    if (s.income > 0 && net < 0) meh.push(`you spent ${e0(-net)} more than came in`);
+    if (buffer != null && buffer < 1 && !bad.length) meh.push(`your balance covers less than one month of must-pay costs`);
+    const prevEveryday = avg("everyday");
+    if (prior.length && s.everyday > prevEveryday * 1.5 && s.everyday - prevEveryday > 50) {
+      meh.push(`small everyday purchases jumped to ${e0(s.everyday)} (usually about ${e0(prevEveryday)})`);
+    }
+    if (savingsRate != null && savingsRate >= 0 && savingsRate < 0.05) meh.push(`almost nothing left over to save`);
+    if (savingsRate != null && savingsRate >= 0.2) good.push(`you kept ${Math.round(savingsRate * 100)}% of your income`);
+    if (s.saving > 0) good.push(`you moved ${e0(s.saving)} to investments`);
+    if (!monthRisky.length && flex > 0) good.push(`every treat was within your means`);
+    if (buffer != null && buffer >= 3) good.push(`your buffer covers ${Math.floor(buffer)} months of must-pay costs`);
+
+    const level = bad.length ? "angry" : meh.length ? "mild" : "happy";
+    // 0-100 for later gamification; banded so it always agrees with the mood:
+    // angry 0-35, mild 36-69, happy 70-100.
+    const raw = 60 + (savingsRate ?? 0) * 80 - 12 * meh.length - 4 * Math.min(5, monthRisky.length)
+      + (buffer != null ? Math.min(10, buffer * 2) : 0);
+    const [lo, hi] = { angry: [0, 35], mild: [36, 69], happy: [70, 100] }[level];
+    const score = Math.round(Math.max(lo, Math.min(hi, level === "angry" ? raw - 50 : raw)));
+    return {
+      month,
+      mood: level,
+      score,
+      reasons: { bad, meh, good },
+      risky_purchases: monthRisky.slice(0, 10),
+      risky_purchases_count: monthRisky.length,
+      numbers: {
+        income_eur: r2(s.income), spending_eur: r2(s.spend), flexible_spending_eur: r2(flex),
+        savings_rate_pct: savingsRate != null ? Math.round(savingsRate * 100) : null,
+        buffer_months: buffer != null ? r2(buffer) : null,
+      },
+    };
+  }
+
   // ---------- where it really goes: small habitual purchases ----------
   /**
    * Habits in the "slips through your fingers" basket, grouped by merchant
@@ -559,7 +648,7 @@ export function createEngine(data, { overrides = {}, benchmarks = null } = {}) {
 
   return {
     data, txs, today, firstDate, months, categories, merchantTypes, label,
-    MONTH_STATS, monthStats, averages, resolvePeriod, query, profile, safeToSpend, whatIf, benchmark, habits,
+    MONTH_STATS, monthStats, averages, resolvePeriod, query, profile, safeToSpend, whatIf, benchmark, habits, mood,
     describe,
   };
 }

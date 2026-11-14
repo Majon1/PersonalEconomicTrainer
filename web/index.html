@@ -13,7 +13,7 @@
         <span class="brand-mark" aria-hidden="true">€</span>
         <span>Personal Economic Trainer</span>
       </div>
-      <div class="who" id="who"></div>
+      <div class="who"><span id="who"></span><label class="picker"><span class="sr-only">Customer</span><select id="customerSelect" aria-label="Choose customer"></select></label></div>
     </div>
   </header>
 
@@ -31,6 +31,25 @@
       </section>
 
       <div class="notice" id="notice" hidden></div>
+
+      <!-- Money buddy: mood of this month's decisions -->
+      <section class="card buddy-card" id="sec-buddy" aria-live="polite">
+        <div class="buddy-figure" id="buddyFigure"></div>
+        <div class="buddy-talk">
+          <div class="bubble">
+            <div class="buddy-title" id="buddyTitle"></div>
+            <p class="muted" id="buddyLine"></p>
+            <ul class="buddy-reasons" id="buddyReasons"></ul>
+          </div>
+          <div class="buddy-meta">
+            <div class="score" id="buddyScore"></div>
+            <div class="mood-strip-wrap">
+              <div class="label">Your months</div>
+              <div class="mood-strip" id="moodStrip" role="group" aria-label="Mood per month"></div>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <!-- Headline numbers -->
       <section class="status-grid">
@@ -176,7 +195,8 @@
 
     <aside class="chat" id="chat" aria-label="Chat with your money">
       <div class="chat-head">
-        <div>
+        <div class="chat-buddy" id="chatBuddy"></div>
+        <div style="flex:1">
           <h2>Ask about your money</h2>
           <p class="muted small" id="aiStatus">Connecting…</p>
         </div>

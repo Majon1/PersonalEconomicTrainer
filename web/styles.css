@@ -347,3 +347,66 @@ table.habits td:first-child { font-weight: 600; }
 
 /* keep sections clear of the sticky header when the chat scrolls to them */
 .card, .intro { scroll-margin-top: 72px; }
+
+/* ---------- Money buddy ---------- */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.who { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.who > span { display: flex; gap: 6px; flex-wrap: wrap; }
+.picker select {
+  font: inherit; font-size: 13px; color: var(--ink); background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px;
+}
+.buddy-card { display: grid; grid-template-columns: 150px 1fr; gap: 20px; align-items: center; }
+.buddy-figure { display: grid; place-items: center; }
+.buddy-talk { display: grid; grid-template-columns: 1.4fr 1fr; gap: 20px; align-items: center; min-width: 0; }
+.bubble { position: relative; background: var(--surface-2); border-radius: 14px; padding: 14px 16px; min-width: 0; }
+.bubble::before {
+  content: ""; position: absolute; left: -9px; top: 28px; border: 9px solid transparent; border-left: 0;
+  border-right-color: var(--surface-2);
+}
+.buddy-title { font-size: 18px; font-weight: 650; }
+.buddy-reasons { list-style: none; padding: 0; margin: 8px 0 0; font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
+.buddy-reasons li { display: flex; gap: 8px; align-items: baseline; }
+.buddy-reasons .ico { flex: none; width: 18px; height: 18px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 11px; font-weight: 700; color: #fff; }
+.ico.good { background: #0ca30c; }
+.ico.meh { background: #fab219; color: #0b0b0b; }
+.ico.bad { background: #d03b3b; }
+.score .label { margin-bottom: 4px; }
+.score-row { display: flex; align-items: baseline; gap: 6px; }
+.score-value { font-size: 28px; font-weight: 650; }
+.score-track { height: 8px; border-radius: 999px; background: var(--surface-2); margin-top: 6px; overflow: hidden; }
+.score-fill { height: 100%; border-radius: 999px; }
+.mood-strip-wrap { margin-top: 14px; }
+.mood-strip { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.mood-dot {
+  width: 18px; height: 18px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0;
+  display: inline-grid; place-items: center; font-size: 10px; font-weight: 700; color: #fff;
+}
+.mood-dot.happy { background: #0ca30c; }
+.mood-dot.mild { background: #fab219; color: #0b0b0b; }
+.mood-dot.angry { background: #d03b3b; }
+.mood-dot.sel { outline: 2px solid var(--ink); outline-offset: 1px; }
+.chat-head { align-items: center; }
+.chat-buddy { flex: none; }
+
+/* buddy motion (off for reduced motion) */
+@media (prefers-reduced-motion: no-preference) {
+  .buddy-happy .buddy-body { animation: bob 2.6s ease-in-out infinite; transform-origin: 60px 110px; }
+  .buddy-happy .sparkle { animation: twinkle 1.8s ease-in-out infinite; transform-origin: 101px 32px; }
+  .buddy-mild .buddy-body { animation: tilt 4s ease-in-out infinite; transform-origin: 60px 110px; }
+  .buddy-angry .buddy-body { animation: shake 0.5s ease-in-out 3; transform-origin: 60px 60px; }
+  .buddy-angry .steam { animation: steam 1.4s ease-in-out infinite; }
+}
+@keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+@keyframes twinkle { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(0.6); opacity: 0.5; } }
+@keyframes tilt { 0%, 100% { transform: rotate(0); } 50% { transform: rotate(-4deg); } }
+@keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-3px) rotate(-3deg); } 75% { transform: translateX(3px) rotate(3deg); } }
+@keyframes steam { 0%, 100% { opacity: 0.2; transform: translateY(2px); } 50% { opacity: 1; transform: translateY(-3px); } }
+
+@media (max-width: 900px) {
+  .buddy-talk { grid-template-columns: 1fr; }
+}
+@media (max-width: 560px) {
+  .buddy-card { grid-template-columns: 1fr; justify-items: center; }
+  .bubble::before { display: none; }
+}

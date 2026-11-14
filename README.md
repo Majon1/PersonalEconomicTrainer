@@ -12,6 +12,11 @@ S-Bank-style transaction data, in the spirit of MyData.
   irregular, everyday spending that slips through your fingers, and nice-to-haves
   you could live without if money got tight. "Where it really goes" shows the
   small habits behind the third basket and what they cost per year.
+- **Money buddy:** an avatar whose mood reflects your decisions each month.
+  Happy when you live within your means, mild when you could do better (spent
+  more than you earned, everyday habits jumped, thin buffer), angry when you buy
+  things you can't afford (e.g. takeaway that leaves less than the rent still
+  due before payday). Comes with a 0-100 score, ready for gamification.
 - **Your data, your rules:** move any category or merchant type to another
   basket, see exactly what the data contains, and download it as JSON or CSV.
 - **Open-data benchmarks** from Statistics Finland: spending per category vs.
@@ -34,7 +39,7 @@ The dashboard works without a key; the chat needs one.
 ### Data scripts
 
 ```
-npm run build:customer -- CUST01957   # extract one customer to web/data/customer.json
+npm run build:customer -- CUST01957 CUST02663 CUST02528   # extract demo customers to web/data/customers/ (first = default)
 npm run fetch:benchmarks              # refresh data/benchmarks.json from Statistics Finland
 ```
 
@@ -42,7 +47,9 @@ npm run fetch:benchmarks              # refresh data/benchmarks.json from Statis
 
 | Path | What it does |
 |---|---|
-| `scripts/build-customer.mjs` | Reads the CSVs, sorts each transaction into a basket |
+| `scripts/build-customer.mjs` | Extracts customers from the CSVs into `web/data/customers/` |
+| `scripts/lib.mjs` | Basket rules, merchant names and CSV reading |
+| `web/avatar.js` | The money buddy avatar (SVG, three moods) |
 | `scripts/fetch-benchmarks.mjs` | Downloads benchmark tables from the Statistics Finland PxWeb API |
 | `web/finance.js` | Shared calculation engine (dashboard and chat use the same numbers) |
 | `web/app.js`, `web/chat.js` | Dashboard and chat panel |
@@ -62,7 +69,7 @@ Two baskets you must pay, two you choose:
 
 The first three are the brief's baskets; *Nice to have* keeps big deliberate
 purchases from hiding the small leaks. The 40 € limit is `SMALL_PURCHASE_EUR` in
-`scripts/build-customer.mjs`. Users can change any rule in the **My data** section.
+`scripts/lib.mjs`. Users can change any rule in the **My data** section.
 
 ## Privacy
 
@@ -76,3 +83,13 @@ not keep the conversation after answering (by default it would store it for
 `gemini-4-hydrogen` with `thinking_level: medium`; both can be changed in `.env`.
 
 Benchmark data: Statistics Finland, CC BY 4.0.
+
+## Demo customers
+
+| Customer | Age | Typical buddy mood |
+|---|---|---|
+| CUST01957 | 40 | Mostly happy: high savings, few small leaks |
+| CUST02663 | 40 | Mild: big everyday spending, some months over budget |
+| CUST02528 | 21 | Often angry: treats bought while rent is still due, account in the red |
+
+Switch between them with the picker in the top bar (or `?customer=ID`).

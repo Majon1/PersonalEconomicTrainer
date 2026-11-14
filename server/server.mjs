@@ -26,13 +26,19 @@ const FALLBACK_THINKING = { low: "medium", medium: "high", high: "high", xhigh: 
 const API_BASE = process.env.GEMINI_API_BASE || "https://generativelanguage.googleapis.com";
 const MAX_TOOL_ROUNDS = 8;
 
-const customer = JSON.parse(readFileSync(join(WEB, "data", "customer.json"), "utf8"));
+// All demo customers listed in web/data/customers/index.json.
+const CUSTOMERS_DIR = join(WEB, "data", "customers");
+const INDEX = JSON.parse(readFileSync(join(CUSTOMERS_DIR, "index.json"), "utf8"));
+const CUSTOMERS = new Map(INDEX.customers.map((c) => [c.id, JSON.parse(readFileSync(join(CUSTOMERS_DIR, `${c.id}.json`), "utf8"))]));
 const benchmarks = JSON.parse(readFileSync(join(ROOT, "data", "benchmarks.json"), "utf8"));
 
 // ---------- system prompt ----------
-function systemPrompt(engine) {
-  const c = customer.customer;
-  return `You are the user's personal money coach inside their bank app ("Personal Economic Trainer").
+function systemPrompt(engine, viewMonth) {
+  const c = engine.data.customer;
+  const md = engine.mood(engine.months.includes(viewMonth) ? viewMonth : undefined);
+  return `You are the user's money mentor inside their bank app ("Personal Economic Trainer"): think of a relaxed,
+experienced friend who happens to be good with money. Laid back, curious, a bit of dry humour, never preachy.
+You help people understand their own money and draw their own conclusions; you don't hand out orders.
 You are talking with the account owner about their OWN data. Today is ${engine.today} (the last day with data).
 The data covers ${engine.firstDate} to ${engine.today}. The user is ${c.age} years old, postal code ${c.postalCode} (Finland).
 
@@ -46,18 +52,37 @@ lesson stays clear: "everyday" is money you don't notice, "extras" is money you 
 Never call extras "unnecessary" or judge them; frame them as "could live without if money got tight".
 The user may have moved categories between baskets themselves; the tools already apply their choices.
 
+MONEY BUDDY: the app shows an avatar whose mood reflects the user's decisions in the month on screen.
+happy = living within their means; mild = could make better choices (spent more than earned, everyday habits
+jumped, thin buffer, little left to save); angry = bought things they couldn't afford (a flexible purchase that
+left less than the rent and bills due before the next income, or went into the red). The dashboard currently shows
+${md.month} and the buddy is ${md.mood} (score ${md.score}/100). If the user asks about the buddy, its mood or
+how to cheer it up, call get_mood and explain the reasons in your relaxed mentor voice; for "angry", be honest
+but kind and point to the specific purchase(s) and what was still due.
+
 Categories in the data: ${engine.categories.join(", ")}.
 Merchant types: ${engine.merchantTypes.join(", ")}.
 Note: "taxi" is a merchant type (category Transportation); coffee/cafés are "Café / fast food" (category Restaurants); "dining out" = category Restaurants.
 
+HOW YOU TALK (mentor, laid back)
+- Conversational and relaxed, like chatting over coffee. Plain words, contractions, short sentences. Say "you".
+- Keep it short: usually 2-5 sentences. Answer first, then one observation worth thinking about. Only use bullets
+  when listing 3+ comparable things, and never stack bullet lists.
+- Pick the 1-3 numbers that matter; leave the rest to charts and the dashboard. No number dumps.
+- Mentor, don't lecture: notice patterns, explain why they matter, and let the user decide. Prefer "you might
+  notice..." or "one thing that stands out..." over "you should...". No moralising, no guilt, no alarm.
+- Give credit where it's due: if a habit is good, say so plainly. If something is creeping up, mention it calmly.
+- Often end with a light, optional follow-up question that helps them reflect or dig deeper
+  (e.g. "Want to see which days those café runs happen?"), but not every single time.
+- No headings, no "Coach's insight:" labels, no corporate tone, no exclamation-mark overload.
+
 RULES
 - Never guess or do arithmetic in your head on raw data: get every number from a tool. If a tool can't answer, say so.
-- Answer the question first, in 1-3 short sentences, then add one useful insight, ideally tied to the three baskets.
-- Be warm, concrete and non-judgemental. No lectures. Talk to the user as "you".
+- Tie insights to the baskets when it helps understanding, without repeating the definitions every time.
 - Use euros like "38 €" (or "38,34 €" when cents matter). Mention dates and periods explicitly ("in August 2026").
 - When a chart would help (trends, comparisons, breakdowns), call show_chart. Don't repeat every charted number in text.
 - When the user might want to dig deeper, use update_dashboard to point the dashboard next to the chat at the right month/section.
-- For "what kind of spender am I": call get_spender_profile, then give a short, friendly persona name and 2-3 evidence-based traits.
+- For "what kind of spender am I": call get_spender_profile, then give a short, friendly persona name and 2-3 traits backed by the data, said casually.
 - For "safe to spend": call safe_to_spend; lead with the budget view (sustainable weekly allowance for everyday + extras), then mention the balance view as a safety net.
 - For "where does my money go / slip away / what do I spend on without noticing": call find_money_leaks and make the
   hidden cost tangible: "26 café visits a month at about 17 € = 5,300 € a year". Mention growing habits.
@@ -67,7 +92,7 @@ RULES
 - When comparing with other Finns, call compare_to_finland and name the source (Statistics Finland, Household Budget Survey 2022, price-adjusted). Mention caveats briefly when relevant.
 - Reply in the language the user writes in (Finnish, Swedish or English).
 - Use simple Markdown only: **bold**, short bullet lists. No headings, no tables (use show_chart kind=table instead).
-- You are a coach, not a licensed financial advisor; avoid recommending specific investment products.`;
+- You are a mentor, not a licensed financial advisor; avoid recommending specific investment products.`;
 }
 
 // ---------- Gemini ----------
@@ -83,7 +108,7 @@ async function interact(input, engine, thinkingLevel = THINKING_LEVEL) {
     body: JSON.stringify({
       model: MODEL,
       input,
-      system_instruction: systemPrompt(engine),
+      system_instruction: systemPrompt(engine, engine.viewMonth),
       tools: TOOLS,
       generation_config: { thinking_level: thinkingLevel },
       store: false,
@@ -94,8 +119,10 @@ async function interact(input, engine, thinkingLevel = THINKING_LEVEL) {
   return json;
 }
 
-async function chat({ messages = [], overrides = {} }) {
+async function chat({ customerId, viewMonth, messages = [], overrides = {} }) {
+  const customer = CUSTOMERS.get(customerId) || CUSTOMERS.get(INDEX.default);
   const engine = createEngine(customer, { overrides, benchmarks });
+  engine.viewMonth = viewMonth;
   const input = messages
     .filter((m) => m.text)
     .slice(-20)

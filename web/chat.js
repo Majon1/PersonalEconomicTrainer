@@ -1,7 +1,14 @@
 import {
   getOverrides, applyDashboardAction, hasServer, esc, color, fmt, monthName,
-  el, niceMax, topRoundedRect, compact, hover, ttRow, cssVar,
+  el, niceMax, topRoundedRect, compact, hover, ttRow, cssVar, customerId, getMood,
 } from "./app.js";
+import { avatarSvg } from "./avatar.js";
+
+// Small buddy next to the chat title, following the dashboard's month.
+function showChatBuddy(md) {
+  if (md) $("chatBuddy").innerHTML = avatarSvg(md.mood, 44, `Money buddy is ${md.mood}`);
+}
+document.addEventListener("mood-change", (e) => showChatBuddy(e.detail));
 
 const $ = (id) => document.getElementById(id);
 const log = $("chatLog"), form = $("chatForm"), input = $("chatInput"), sendBtn = $("chatSend");
@@ -15,6 +22,7 @@ const SUGGESTIONS = [
   "What do I spend on without noticing?",
   "What could I cut if money got tight?",
   "How do I compare with other Finns my age?",
+  "Why is my money buddy in that mood?",
 ];
 
 const history = []; // [{role: "user"|"model", text}]
@@ -70,8 +78,8 @@ function addMessage(role, html) {
 }
 
 function renderWelcome() {
-  addMessage("bot", `<div class="welcome"><p><b>Hi! Ask me anything about your money.</b></p>
-    <p>I look up every answer in your own transactions, sort your spending into baskets, and compare it with Statistics Finland's open data. Try one of these:</p></div>`);
+  addMessage("bot", `<div class="welcome"><p><b>Hey! What's on your mind, money-wise?</b></p>
+    <p>Ask me anything. I'll dig through your own transactions for the answer, no guesswork. Not sure where to start? Try one of these:</p></div>`);
   $("suggestions").innerHTML = SUGGESTIONS.map((q) => `<button class="chip" type="button">${esc(q)}</button>`).join("");
   $("suggestions").querySelectorAll(".chip").forEach((b) => b.addEventListener("click", () => ask(b.textContent)));
 }
@@ -188,7 +196,7 @@ async function ask(question) {
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: history, overrides: getOverrides() }),
+      body: JSON.stringify({ customerId, viewMonth: getMood()?.month, messages: history, overrides: getOverrides() }),
     });
     const out = await res.json();
     thinking.remove();
@@ -223,6 +231,7 @@ input.addEventListener("keydown", (e) => {
 });
 form.addEventListener("submit", (e) => { e.preventDefault(); ask(input.value); });
 
+showChatBuddy(getMood());
 renderWelcome();
 checkStatus().then(() => {
   // Deep link: ?ask=How+much+did+I+spend+on+taxis
