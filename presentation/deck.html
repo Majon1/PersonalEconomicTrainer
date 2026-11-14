@@ -246,19 +246,19 @@
   <!-- 9. Architecture -->
   <section class="slide">
     <div class="kicker">How it works</div>
-    <h2>AI understands the question, our engine does the math</h2>
+    <h2>AI understands the question, our calculator does the math</h2>
     <div class="flow">
       <div class="card"><span class="tag">React app</span><h3>Phone</h3><p>Mobile web app, ready to embed in S-mobiili</p></div>
       <div class="arrow">›</div>
       <div class="card"><span class="tag">gemini-decision-1</span><h3>Router</h3><p>Picks which lookup answers the question</p></div>
       <div class="arrow">›</div>
-      <div class="card"><span class="tag">Engine</span><h3>Exact euros</h3><p>Baskets, budgets, safe to spend and what-if simulations</p></div>
+      <div class="card"><span class="tag">Calculator</span><h3>Exact euros</h3><p>Baskets, budgets, safe to spend and what-if simulations</p></div>
       <div class="arrow">›</div>
       <div class="card"><span class="tag">gemini-3.5-flash-lite</span><h3>Mikko's reply</h3><p>One short answer in plain words</p></div>
     </div>
     <div class="grid2" style="margin-top:34px">
       <div class="card dark"><img class="logo" src="aiven.webp" alt="Aiven" style="height:34px" /><p>The app runs as a container on Aiven in Frankfurt, with Aiven PostgreSQL holding transactions, Statistics Finland data, and Mikko's memory, budgets and XP.</p></div>
-      <div class="card dark"><img class="logo" src="google_deepmind.webp" alt="Google DeepMind" style="height:24px;margin:5px 0" /><p>Gemini API. Unclear questions escalate to gemini-4-hydrogen with a full tool calling loop. Topic buttons are answered by the engine without calling a model.</p></div>
+      <div class="card dark"><img class="logo" src="google_deepmind.webp" alt="Google DeepMind" style="height:24px;margin:5px 0" /><p>Gemini API. Unclear questions escalate to gemini-4-hydrogen with a full tool calling loop. Topic buttons are answered by the calculator without calling a model.</p></div>
     </div>
   </section>
 
@@ -267,7 +267,7 @@
     <div class="kicker">Trust</div>
     <h2>Correct numbers, private data</h2>
     <ul class="ticks" style="margin-top:40px">
-      <li>Gemini only works with totals from the engine and database, not the full transaction list.</li>
+      <li>Gemini only works with totals from the calculator and the database, not the full transaction list.</li>
       <li>Chat runs with <span class="num">store: false</span>, so Google does not keep the conversation.</li>
       <li>Hosted in the EU, in Frankfurt, with verified TLS to the database.</li>
       <li>Users explore their own data freely instead of fixed charts.</li>
