@@ -1,4 +1,4 @@
-// Service worker: makes S-Trainer installable and lets it open offline.
+// Service worker: makes Mentor Mikko installable and lets it open offline.
 // Network first, falling back to the last cached copy. Chat is never cached,
 // and Vite's dev-server internals are left alone.
 const CACHE = "s-trainer-v1";

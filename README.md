@@ -1,4 +1,4 @@
-# Personal Economic Trainer
+# Mentor Mikko
 
 A pixel-art money coach built in the spirit of S-mobiili. Mikko looks at one customer's own transactions, sorts the month into four baskets, and answers questions in chat. Gemini writes the replies. The euros come from Postgres.
 

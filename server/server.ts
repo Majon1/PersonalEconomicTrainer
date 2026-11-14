@@ -307,7 +307,7 @@ await userDataReady;
 
 app.listen(PORT, HOST, () => {
   const model = process.env.GEMINI_MODEL || "gemini-4-hydrogen";
-  console.log(`Personal Economic Trainer at http://localhost:${PORT}`);
+  console.log(`Mentor Mikko at http://localhost:${PORT}`);
   if (HOST === "0.0.0.0") console.log(`Also reachable on your network: http://<this computer's IP>:${PORT}`);
   console.log(process.env.GEMINI_API_KEY ? `Chat replies with ${model}; questions are routed by gemini-decision-1` : "No GEMINI_API_KEY: the coach loads, chat stays off");
 });

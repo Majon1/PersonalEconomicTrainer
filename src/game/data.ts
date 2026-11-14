@@ -73,7 +73,7 @@ export const SHOP_CATALOG: ShopItem[] = [
     slot: 'mentor_style',
     value: 'classic_visor',
     name: 'Green Ledger Visor',
-    description: 'Standard-issue S-Trainer auditor visor.',
+    description: 'Standard-issue Mentor Mikko auditor visor.',
     requiredLevel: 1,
     coinCost: 0,
   },
