@@ -188,6 +188,115 @@ export async function loadMortgage(pool, customerId) {
   };
 }
 
+// The tables the app writes to, created on start:
+//   mikko_memory    one row per question Mikko asked a customer, with what they did
+//   mikko_budgets   every budget a customer made; a new one ends the one before
+//   mikko_progress  one row per customer: XP, level, coins and Locker items
+export async function ensureUserTables(pool) {
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS mikko_progress (
+       customer_id text PRIMARY KEY,
+       progress    jsonb NOT NULL,
+       updated_at  timestamptz NOT NULL
+     )`,
+  );
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS mikko_memory (
+       customer_id text NOT NULL,
+       quest_id    text NOT NULL,
+       entry       jsonb NOT NULL,
+       updated_at  timestamptz NOT NULL DEFAULT now(),
+       PRIMARY KEY (customer_id, quest_id)
+     )`,
+  );
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS mikko_budgets (
+       customer_id text NOT NULL,
+       budget_id   text NOT NULL,
+       limits      jsonb NOT NULL,
+       created_at  timestamptz NOT NULL,
+       ended_at    timestamptz,
+       PRIMARY KEY (customer_id, budget_id)
+     )`,
+  );
+}
+
+export async function loadBudgets(pool, customerId) {
+  const { rows } = await pool.query(
+    `SELECT budget_id, limits, created_at, ended_at FROM mikko_budgets
+     WHERE customer_id = $1 ORDER BY created_at, budget_id`,
+    [customerId],
+  );
+  return rows.map((r) => ({
+    id: r.budget_id,
+    budget: r.limits,
+    createdAt: r.created_at.toISOString(),
+    ...(r.ended_at ? { endedAt: r.ended_at.toISOString() } : {}),
+  }));
+}
+
+// Ending is final: a later write can end a budget, never reopen it.
+export async function saveBudget(pool, customerId, saved) {
+  await pool.query(
+    `INSERT INTO mikko_budgets (customer_id, budget_id, limits, created_at, ended_at)
+     VALUES ($1, $2, $3::jsonb, $4, $5)
+     ON CONFLICT (customer_id, budget_id)
+     DO UPDATE SET ended_at = LEAST(mikko_budgets.ended_at, EXCLUDED.ended_at)`,
+    [customerId, saved.id, JSON.stringify(saved.budget), saved.createdAt, saved.endedAt ?? null],
+  );
+}
+
+export async function clearBudgets(pool, customerId) {
+  await pool.query("DELETE FROM mikko_budgets WHERE customer_id = $1", [customerId]);
+}
+
+export async function loadProgress(pool, customerId) {
+  const { rows } = await pool.query(
+    "SELECT progress, updated_at FROM mikko_progress WHERE customer_id = $1",
+    [customerId],
+  );
+  return rows[0] ? { progress: rows[0].progress, at: rows[0].updated_at.toISOString() } : null;
+}
+
+// The newest write wins, so a stale tab can't roll XP back. Returns whether it was stored.
+export async function saveProgress(pool, customerId, progress, at) {
+  const { rowCount } = await pool.query(
+    `INSERT INTO mikko_progress (customer_id, progress, updated_at)
+     VALUES ($1, $2::jsonb, $3)
+     ON CONFLICT (customer_id)
+     DO UPDATE SET progress = EXCLUDED.progress, updated_at = EXCLUDED.updated_at
+     WHERE mikko_progress.updated_at <= EXCLUDED.updated_at`,
+    [customerId, JSON.stringify(progress), at],
+  );
+  return rowCount > 0;
+}
+
+export async function clearProgress(pool, customerId) {
+  await pool.query("DELETE FROM mikko_progress WHERE customer_id = $1", [customerId]);
+}
+
+export async function loadMemory(pool, customerId) {
+  const { rows } = await pool.query(
+    "SELECT entry FROM mikko_memory WHERE customer_id = $1 ORDER BY updated_at, quest_id",
+    [customerId],
+  );
+  return rows.map((r) => r.entry);
+}
+
+export async function saveMemoryEntry(pool, customerId, entry) {
+  await pool.query(
+    `INSERT INTO mikko_memory (customer_id, quest_id, entry, updated_at)
+     VALUES ($1, $2, $3::jsonb, now())
+     ON CONFLICT (customer_id, quest_id)
+     DO UPDATE SET entry = EXCLUDED.entry, updated_at = now()`,
+    [customerId, entry.questId, JSON.stringify(entry)],
+  );
+}
+
+export async function clearMemory(pool, customerId) {
+  await pool.query("DELETE FROM mikko_memory WHERE customer_id = $1", [customerId]);
+}
+
 let mortgageStats = null;
 export async function loadMortgageStats(pool) {
   if (mortgageStats) return mortgageStats;

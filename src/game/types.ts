@@ -18,6 +18,16 @@ export interface Budget {
   categories: Record<string, number>;
 }
 
+/** One budget the user made. A new one ends the one before, so all stay listed. */
+export interface SavedBudget {
+  id: string;
+  budget: Budget;
+  /** ISO time it was saved */
+  createdAt: string;
+  /** ISO time it was replaced or removed; absent while active */
+  endedAt?: string;
+}
+
 export interface BudgetLine {
   key: string; // 'slips' | 'nice_to_have' | category name
   label: string;
@@ -171,6 +181,25 @@ export interface SuspicionQuest {
     xp: number;
     coins: number;
   }[];
+}
+
+/** What the user did when Mikko asked about an expense. Kept so he never asks twice. */
+export interface MikkoMemory {
+  questId: string;
+  reason: SuspicionQuest['reason'];
+  txId: string;
+  merchantId: string;
+  /** what the expense was called when he asked, e.g. "Taxi" */
+  merchant: string;
+  amount: number;
+  date: string;
+  outcome: 'answered' | 'skipped';
+  /** the answer they picked, e.g. "Night out — slipped" */
+  answer?: string;
+  customLabel?: string;
+  basket?: BasketKey;
+  /** ISO time it was recorded */
+  at: string;
 }
 
 export interface BasketSummary {

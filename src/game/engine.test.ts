@@ -17,6 +17,16 @@ import {
   detectRiskyPurchases,
   detectSuspicionQuests,
   levelFromXp,
+  activeBudget,
+  memoryFromQuest,
+  mergeBudgets,
+  mergeMemory,
+  saveBudgetVersion,
+  sanitizeProgress,
+  sanitizeSavedBudget,
+  rememberQuest,
+  sanitizeMemoryEntry,
+  withMemoryOverrides,
   purchaseOrEquipItem,
   resolveInterrogationChoice,
   simulateWhatIf,
@@ -230,6 +240,102 @@ test('bluff detection catches claiming a 2 AM taxi as mandatory regular bill', (
   assert.equal(honestResult.bluffCaught, false);
   assert.equal(honestResult.xpEarned, 30);
   assert.ok(honestResult.coinsEarned > 0);
+});
+
+test('Mikko never asks about the same expense twice, whether it was answered or skipped', () => {
+  const mikkoTxs = SEED_TRANSACTIONS.filter(
+    (t) => t.customerId === 'mikko' && t.source === 'sbank',
+  );
+  const quests = detectSuspicionQuests(mikkoTxs, [], [], false);
+  assert.ok(quests.length >= 2, 'Expected at least two quests in the seed ledger');
+  const [first, second] = quests;
+  const txOf = (id: string) => mikkoTxs.find((t) => t.id === id)!;
+
+  // Answered: stored with the answer and what it was filed as.
+  const answered = memoryFromQuest({ quest: first, tx: txOf(first.txId), outcome: 'answered', choiceId: first.choices[0].id, at: '2026-11-14T12:00:00Z' });
+  assert.equal(answered.answer, first.choices[0].label);
+  assert.equal(answered.basket, first.choices[0].basket);
+
+  // Skipped: stored without an answer.
+  const skipped = memoryFromQuest({ quest: second, tx: txOf(second.txId), outcome: 'skipped' });
+  assert.equal(skipped.answer, undefined);
+
+  let memory = rememberQuest([], answered);
+  memory = rememberQuest(memory, skipped);
+  memory = rememberQuest(memory, answered);
+  assert.equal(memory.length, 2, 'The same quest is stored once');
+
+  const after = detectSuspicionQuests(mikkoTxs, [], [], false, memory);
+  assert.ok(!after.some((q) => q.id === first.id), 'Answered quest is not asked again');
+  assert.ok(!after.some((q) => q.id === second.id), 'Skipped quest is not asked again');
+
+  // On another device only the stored memory exists: the answer still files the expense.
+  const overrides = withMemoryOverrides([], memory);
+  assert.equal(overrides.length, 1, 'Only the answered quest becomes a label');
+  assert.equal(overrides[0].basket, first.choices[0].basket);
+  assert.equal(withMemoryOverrides(overrides, memory).length, 1, 'Labels are not added twice');
+});
+
+test('memory from two places merges by quest, newest wins, and junk is rejected', () => {
+  const base = { reason: 'late_night_slip', txId: 't1', merchantId: 'm1', merchant: 'Taxi', amount: 24.5, date: '2026-09-12' } as const;
+  const old = { ...base, questId: 'q1', outcome: 'skipped', at: '2026-11-01T10:00:00.000Z' } as const;
+  const newer = { ...base, questId: 'q1', outcome: 'answered', answer: 'Night out — slipped', customLabel: 'Late-Night Taxi', basket: 'slips', at: '2026-11-02T10:00:00.000Z' } as const;
+  const other = { ...base, questId: 'q2', outcome: 'skipped', at: '2026-11-01T09:00:00.000Z' } as const;
+  const merged = mergeMemory([newer, other], [old]);
+  assert.deepEqual(merged.map((m) => [m.questId, m.outcome]), [['q2', 'skipped'], ['q1', 'answered']]);
+
+  assert.deepEqual(sanitizeMemoryEntry(newer), newer);
+  assert.equal(sanitizeMemoryEntry({ ...newer, outcome: 'maybe' }), null);
+  assert.equal(sanitizeMemoryEntry({ ...newer, at: 'yesterday' }), null);
+  assert.equal(sanitizeMemoryEntry({ ...old, basket: 'slips' })?.basket, undefined, 'A skip carries no basket');
+});
+
+test('stored progress: level follows XP, only real unlocked items can be equipped', () => {
+  const p = sanitizeProgress({
+    xp: 455.4,
+    level: 99,
+    coins: -5,
+    streakWeeks: 2,
+    unlockedItems: ['style_detective_coat', 'not_an_item', 7],
+    equippedStyle: 'detective_coat',
+    equippedTheme: 'midnight',
+    equippedCardSkin: 'classic_green',
+  })!;
+  assert.equal(p.xp, 455);
+  assert.equal(p.level, 4);
+  assert.equal(p.coins, 0);
+  assert.equal(p.equippedStyle, 'detective_coat');
+  assert.equal(p.equippedTheme, 'spankki', 'midnight is not unlocked, so the free theme is used');
+  assert.ok(!p.unlockedItems.includes('not_an_item'));
+  assert.ok(p.unlockedItems.includes('style_classic_visor'), 'free starter items are always kept');
+  assert.equal(sanitizeProgress({ xp: 'lots', coins: 1 }), null);
+});
+
+test('every budget is kept: a new one ends the last, removing ends it, merges keep the first end', () => {
+  const b1 = { slips: 120, nice_to_have: 200, categories: {} };
+  const b2 = { slips: 100, nice_to_have: 180, categories: { Restaurants: 60 } };
+  let list = saveBudgetVersion([], b1, '2026-11-01T10:00:00.000Z', 'b1');
+  assert.equal(activeBudget(list)?.id, 'b1');
+
+  list = saveBudgetVersion(list, b2, '2026-11-05T10:00:00.000Z', 'b2');
+  assert.equal(list.length, 2, 'The old budget stays listed');
+  assert.equal(list[0].endedAt, '2026-11-05T10:00:00.000Z');
+  assert.equal(activeBudget(list)?.id, 'b2');
+
+  const removed = saveBudgetVersion(list, null, '2026-11-09T10:00:00.000Z', 'unused');
+  assert.equal(removed.length, 2);
+  assert.equal(activeBudget(removed), null, 'Removing leaves no active budget');
+
+  // One device still thinks b2 is active, the other ended it: ended wins.
+  const merged = mergeBudgets(list, removed);
+  assert.equal(merged.length, 2);
+  assert.equal(activeBudget(merged), null);
+  assert.equal(merged[0].endedAt, '2026-11-05T10:00:00.000Z');
+
+  assert.deepEqual(sanitizeSavedBudget(list[1]), list[1]);
+  assert.equal(sanitizeSavedBudget({ ...list[1], id: 'no spaces allowed' }), null);
+  assert.equal(sanitizeSavedBudget({ ...list[1], budget: { slips: 0, nice_to_have: 0 } }), null, 'An empty budget is not a budget');
+  assert.equal(sanitizeSavedBudget({ ...list[1], budget: { slips: -5, nice_to_have: 1e9 } })?.budget.nice_to_have, 100000);
 });
 
 test('XP progression levels Mikko from Lvl 2 (280 XP) to Lvl 3 on +30 XP confession', () => {

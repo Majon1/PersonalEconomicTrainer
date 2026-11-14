@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import { BUDGET_CATEGORIES } from '../game/engine';
-import type { Budget, BudgetStatus } from '../game/types';
+import type { Budget, BudgetStatus, SavedBudget } from '../game/types';
 
 interface BudgetViewProps {
   budget: Budget | null;
+  /** every budget they made, active and ended */
+  history: SavedBudget[];
   suggestion: Budget;
   status: BudgetStatus | null;
   onSave: (budget: Budget | null) => void;
@@ -25,6 +27,19 @@ const PURCHASE_KINDS = [
   { category: 'Home & Tech', label: 'Home / tech' },
   { category: 'Groceries', label: 'Groceries' },
 ];
+
+const day = (iso: string) =>
+  new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+
+function limitsText(b: Budget) {
+  return [
+    b.slips ? `Slips €${b.slips}` : '',
+    b.nice_to_have ? `Nice to have €${b.nice_to_have}` : '',
+    ...Object.entries(b.categories ?? {}).map(([k, v]) => `${k} €${v}`),
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
 
 function NumberField(props: { id: string; label: string; hint?: string; value: string; onChange: (v: string) => void; perMonth?: boolean }) {
   return (
@@ -52,7 +67,8 @@ function NumberField(props: { id: string; label: string; hint?: string; value: s
   );
 }
 
-export function BudgetView({ budget, suggestion, status, onSave, onCheckPurchase, onClose }: BudgetViewProps) {
+export function BudgetView({ budget, history, suggestion, status, onSave, onCheckPurchase, onClose }: BudgetViewProps) {
+  const listed = [...history].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const start = budget ?? suggestion;
   const [slips, setSlips] = useState(String(start.slips || ''));
   const [nice, setNice] = useState(String(start.nice_to_have || ''));
@@ -227,6 +243,62 @@ export function BudgetView({ budget, suggestion, status, onSave, onCheckPurchase
             </button>
           )}
         </section>
+
+        {listed.length > 0 && (
+          <section className="pixel-card p-3 space-y-2" aria-label="Your budgets" data-testid="budget-history">
+            <div>
+              <h3 className="text-sm font-semibold">Your budgets</h3>
+              <p className="text-[11px] text-[var(--app-text-muted)]">
+                Every budget you've made. Saving a new one ends the one before.
+              </p>
+            </div>
+            <ul className="space-y-1.5">
+              {listed.map((b) => {
+                const active = !b.endedAt;
+                return (
+                  <li
+                    key={b.id}
+                    className="p-2 flex items-start justify-between gap-2"
+                    style={{
+                      backgroundColor: 'var(--app-surface-muted)',
+                      border: `1px solid ${active ? 'var(--app-accent)' : 'var(--app-border)'}`,
+                    }}
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 text-xs font-semibold">
+                        {active ? (
+                          <span
+                            className="px-1 text-[10px] font-bold"
+                            style={{ backgroundColor: 'var(--app-accent)', color: 'var(--app-accent-fg)' }}
+                          >
+                            Active
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-semibold text-[var(--app-text-muted)]">Ended</span>
+                        )}
+                        <span className="font-num">
+                          {day(b.createdAt)}
+                          {b.endedAt ? ` – ${day(b.endedAt)}` : ' – now'}
+                        </span>
+                      </div>
+                      <div className="text-[11px] mt-0.5">{limitsText(b.budget)}</div>
+                    </div>
+                    {!active && (
+                      <button
+                        type="button"
+                        onClick={() => onSave(b.budget)}
+                        className="min-h-[32px] px-2 text-[11px] font-semibold pixel-btn cursor-pointer shrink-0"
+                        style={{ backgroundColor: 'var(--app-surface)', color: 'var(--app-text)' }}
+                      >
+                        Use again
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
       </div>
     </div>
   );

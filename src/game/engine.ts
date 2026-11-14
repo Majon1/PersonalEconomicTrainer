@@ -1,19 +1,24 @@
 import { SHOP_CATALOG } from './data';
 import { SEASONALITY, type SeasonSeries } from './seasonality';
 import type {
+  AppThemeId,
   BasketKey,
   BasketSummary,
   Budget,
   BudgetLine,
   BudgetStatus,
+  CardSkinId,
   ChartPayload,
   EmergencyFund,
   PurchaseVerdict,
   LabelOverride,
   MentorMood,
+  MentorStyleId,
+  MikkoMemory,
   MoneyMood,
   MoneyMoodLevel,
   RiskyPurchase,
+  SavedBudget,
   SeasonHeadsUp,
   PersonaConfig,
   PlayerProgress,
@@ -487,6 +492,99 @@ export function suggestBudget(transactions: Transaction[], overrides: LabelOverr
   return { slips: trim(avg('slips')), nice_to_have: trim(avg('nice_to_have')), categories: {} };
 }
 
+/** Limits from outside (request body, storage), clamped; null if nothing is set. */
+export function sanitizeBudget(raw: unknown): Budget | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const b = raw as Record<string, unknown>;
+  const n = (v: unknown) => Math.max(0, Math.min(100000, Math.round(Number(v) || 0)));
+  const categories: Record<string, number> = {};
+  if (b.categories && typeof b.categories === 'object') {
+    for (const [k, v] of Object.entries(b.categories as Record<string, unknown>).slice(0, 12)) {
+      if (n(v) > 0) categories[String(k).slice(0, 40)] = n(v);
+    }
+  }
+  const budget = { slips: n(b.slips), nice_to_have: n(b.nice_to_have), categories };
+  return budget.slips || budget.nice_to_have || Object.keys(categories).length ? budget : null;
+}
+
+/** The budget in force: the newest one not yet ended. */
+export function activeBudget(budgets: SavedBudget[]): SavedBudget | null {
+  return [...budgets].filter((b) => !b.endedAt).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null;
+}
+
+/** Saving ends the active budget and starts `next`; null just ends it. */
+export function saveBudgetVersion(
+  budgets: SavedBudget[],
+  next: Budget | null,
+  at: string,
+  id: string,
+): SavedBudget[] {
+  const ended = budgets.map((b) => (b.endedAt ? b : { ...b, endedAt: at }));
+  return next ? [...ended, { id, budget: next, createdAt: at }] : ended;
+}
+
+/** Union by id. Ending is final, so the earliest end time wins. */
+export function mergeBudgets(a: SavedBudget[], b: SavedBudget[]): SavedBudget[] {
+  const byId = new Map<string, SavedBudget>();
+  for (const s of [...a, ...b]) {
+    const prev = byId.get(s.id);
+    if (!prev) {
+      byId.set(s.id, s);
+      continue;
+    }
+    const ends = [prev.endedAt, s.endedAt].filter((v): v is string => Boolean(v)).sort();
+    byId.set(s.id, ends.length ? { ...prev, endedAt: ends[0] } : prev);
+  }
+  return [...byId.values()].sort((x, y) => x.createdAt.localeCompare(y.createdAt));
+}
+
+/** A saved budget from outside, or null if it isn't one. */
+export function sanitizeSavedBudget(raw: unknown): SavedBudget | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const id = typeof r.id === 'string' && /^[\w-]{1,64}$/.test(r.id) ? r.id : null;
+  const budget = sanitizeBudget(r.budget);
+  const time = (v: unknown) => (typeof v === 'string' && !Number.isNaN(Date.parse(v)) ? new Date(v).toISOString() : null);
+  const createdAt = time(r.createdAt);
+  if (!id || !budget || !createdAt) return null;
+  const endedAt = time(r.endedAt);
+  return endedAt ? { id, budget, createdAt, endedAt } : { id, budget, createdAt };
+}
+
+/**
+ * XP, coins and Locker items from outside, or null if it isn't that. Items must
+ * exist in the shop, equipped items must be unlocked, and the level follows the XP.
+ */
+export function sanitizeProgress(raw: unknown): PlayerProgress | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const count = (v: unknown, max: number) =>
+    typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(0, Math.round(v))) : null;
+  const xp = count(r.xp, 1_000_000);
+  const coins = count(r.coins, 1_000_000);
+  if (xp === null || coins === null) return null;
+  const ids = new Set(Array.isArray(r.unlockedItems) ? r.unlockedItems.filter((i) => typeof i === 'string') : []);
+  for (const item of SHOP_CATALOG) if (item.requiredLevel <= 1 && item.coinCost === 0) ids.add(item.id);
+  const unlocked = SHOP_CATALOG.filter((item) => ids.has(item.id));
+  const equip = (slot: ShopItem['slot'], v: unknown) =>
+    (unlocked.find((item) => item.slot === slot && item.value === v) ??
+      unlocked.find((item) => item.slot === slot && item.coinCost === 0))?.value;
+  const equippedStyle = equip('mentor_style', r.equippedStyle) as MentorStyleId | undefined;
+  const equippedTheme = equip('app_theme', r.equippedTheme) as AppThemeId | undefined;
+  const equippedCardSkin = equip('card_skin', r.equippedCardSkin) as CardSkinId | undefined;
+  if (!equippedStyle || !equippedTheme || !equippedCardSkin) return null;
+  return {
+    xp,
+    level: levelFromXp(xp),
+    coins,
+    streakWeeks: count(r.streakWeeks, 1000) ?? 0,
+    unlockedItems: unlocked.map((item) => item.id),
+    equippedStyle,
+    equippedTheme,
+    equippedCardSkin,
+  };
+}
+
 function categorySpend(transactions: Transaction[], month: string, category: string): number {
   return transactions
     .filter((t) => t.date.startsWith(month) && t.amount < 0 && !isNonSpending(t) && t.category === category)
@@ -628,9 +726,12 @@ function addDays(date: string, days: number): string {
 export function detectSuspicionQuests(
   transactions: Transaction[],
   overrides: LabelOverride[],
-  resolvedIds: string[],
+  resolvedQuestIds: string[],
   includePsd2: boolean,
+  memory: MikkoMemory[] = [],
 ): SuspicionQuest[] {
+  // Answered or skipped once means never asked again.
+  const resolvedIds = [...resolvedQuestIds, ...memory.map((m) => m.questId)];
   const latestMonth = getLatestMonthKey(transactions);
   const visible = filterTransactions(transactions, includePsd2);
   const latest = visible.filter((t) => t.date.startsWith(latestMonth));
@@ -785,6 +886,102 @@ export function detectSuspicionQuests(
   }
 
   return quests;
+}
+
+/** The memory entry for a quest Mikko asked: an accepted answer, or a skip. */
+export function memoryFromQuest(params: {
+  quest: SuspicionQuest;
+  tx: Transaction;
+  outcome: MikkoMemory['outcome'];
+  choiceId?: string;
+  at?: string;
+}): MikkoMemory {
+  const { quest, tx, outcome } = params;
+  const choice = outcome === 'answered' ? quest.choices.find((c) => c.id === params.choiceId) : undefined;
+  return {
+    questId: quest.id,
+    reason: quest.reason,
+    txId: tx.id,
+    merchantId: tx.merchantId,
+    merchant: tx.merchantType || tx.category || tx.merchantId,
+    amount: quest.amount,
+    date: tx.date,
+    outcome,
+    answer: choice?.label,
+    customLabel: choice?.customLabel,
+    basket: choice?.basket,
+    at: params.at ?? new Date().toISOString(),
+  };
+}
+
+/** Adds or replaces the entry for that quest, newest last. */
+export function rememberQuest(memory: MikkoMemory[], entry: MikkoMemory): MikkoMemory[] {
+  return [...memory.filter((m) => m.questId !== entry.questId), entry];
+}
+
+/** Union of two memories by quest; the later `at` wins. */
+export function mergeMemory(a: MikkoMemory[], b: MikkoMemory[]): MikkoMemory[] {
+  const byQuest = new Map<string, MikkoMemory>();
+  for (const m of [...a, ...b]) {
+    const prev = byQuest.get(m.questId);
+    if (!prev || m.at >= prev.at) byQuest.set(m.questId, m);
+  }
+  return [...byQuest.values()].sort((x, y) => x.at.localeCompare(y.at));
+}
+
+/** The basket label an answered quest stands for (the same one the answer created). */
+export function overrideFromMemory(m: MikkoMemory): LabelOverride | null {
+  if (m.outcome !== 'answered' || !m.basket || !m.customLabel) return null;
+  const merchantWide = m.reason === 'mystery_repeat' || m.reason === 'psd2_hidden';
+  return merchantWide
+    ? { merchantId: m.merchantId, customLabel: m.customLabel, basket: m.basket }
+    : { txId: m.txId, customLabel: m.customLabel, basket: m.basket };
+}
+
+/** Adds the labels from answered quests that aren't in the overrides yet. */
+export function withMemoryOverrides(overrides: LabelOverride[], memory: MikkoMemory[]): LabelOverride[] {
+  const next = [...overrides];
+  for (const m of memory) {
+    const o = overrideFromMemory(m);
+    if (!o) continue;
+    const exists = next.some((x) => (o.txId ? x.txId === o.txId : x.merchantId === o.merchantId));
+    if (!exists) next.push(o);
+  }
+  return next;
+}
+
+const QUEST_REASONS = new Set<MikkoMemory['reason']>(['mystery_repeat', 'late_night_slip', 'spike_anomaly', 'psd2_hidden']);
+const BASKETS = new Set<BasketKey>(['mandatory_regular', 'mandatory_irregular', 'slips', 'nice_to_have']);
+
+/** A memory entry from outside (request body, old storage), or null if it isn't one. */
+export function sanitizeMemoryEntry(raw: unknown): MikkoMemory | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const str = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+  const questId = str(r.questId, 120);
+  const outcome = r.outcome === 'answered' || r.outcome === 'skipped' ? r.outcome : null;
+  const reason = QUEST_REASONS.has(r.reason as MikkoMemory['reason']) ? (r.reason as MikkoMemory['reason']) : null;
+  const amount = Number(r.amount);
+  const at = str(r.at, 40);
+  if (!questId || !outcome || !reason || !Number.isFinite(amount) || Number.isNaN(Date.parse(at))) return null;
+  const entry: MikkoMemory = {
+    questId,
+    reason,
+    txId: str(r.txId, 80),
+    merchantId: str(r.merchantId, 80),
+    merchant: str(r.merchant, 60),
+    amount: Math.round(Math.abs(amount) * 100) / 100,
+    date: str(r.date, 10),
+    outcome,
+    at: new Date(at).toISOString(),
+  };
+  if (outcome === 'answered') {
+    const basket = BASKETS.has(r.basket as BasketKey) ? (r.basket as BasketKey) : undefined;
+    if (str(r.answer, 80)) entry.answer = str(r.answer, 80);
+    if (str(r.customLabel, 60)) entry.customLabel = str(r.customLabel, 60);
+    if (basket) entry.basket = basket;
+  }
+  return entry;
 }
 
 export function resolveInterrogationChoice(params: {

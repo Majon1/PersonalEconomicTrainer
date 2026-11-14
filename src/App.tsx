@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, LayoutGrid, X } from 'lucide-react';
 import { BasketsMeter } from './components/BasketsMeter';
 import { FinanceChart } from './components/FinanceChart';
@@ -19,7 +19,18 @@ import {
   filterTransactions,
   getLatestMonthKey,
   levelFromXp,
+  activeBudget,
+  memoryFromQuest,
+  mergeBudgets,
+  mergeMemory,
   purchaseOrEquipItem,
+  rememberQuest,
+  sanitizeBudget,
+  sanitizeMemoryEntry,
+  sanitizeProgress,
+  sanitizeSavedBudget,
+  saveBudgetVersion,
+  withMemoryOverrides,
   resolveInterrogationChoice,
   simulateWhatIf,
   xpProgressInLevel,
@@ -29,9 +40,11 @@ import type {
   ChartPayload,
   LabelOverride,
   MentorMood,
+  MikkoMemory,
   MoneyMoodLevel,
   Budget,
   PlayerProgress,
+  SavedBudget,
   ShopItem,
   Transaction,
   WhatIfAsset,
@@ -47,12 +60,27 @@ interface CustomerSummary {
 interface SavedUserState {
   forCustomer: string;
   progress: PlayerProgress;
+  /** when `progress` last changed; the newer of this and the server's copy wins */
+  progressAt?: string;
   overrides: LabelOverride[];
   resolvedQuestIds: string[];
   pledgedActive: boolean;
-  /** monthly limits for the "choose" baskets; null = no budget yet */
+  /** every budget they made; the newest one not ended is in force */
+  budgets?: SavedBudget[];
+  /** older saves kept a single budget here; moved into `budgets` on load */
   budget?: Budget | null;
+  /** every question Mikko asked and what the user did with it */
+  memory?: MikkoMemory[];
+  /** the last chat turns, so Mikko keeps the thread after a reload */
+  chat?: ChatTurn[];
 }
+
+interface ChatTurn {
+  role: 'user' | 'mentor';
+  text: string;
+}
+
+const CHAT_KEEP = 12;
 
 function storageKey(customerId: string) {
   return `strainer_${customerId}_v1`;
@@ -97,7 +125,16 @@ function buildInitialState(customerId: string): SavedUserState {
     overrides: [],
     resolvedQuestIds: [],
     pledgedActive: false,
+    budgets: [],
+    memory: [],
+    chat: [],
   };
+}
+
+function newId() {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function loadState(customerId: string): SavedUserState {
@@ -105,12 +142,84 @@ function loadState(customerId: string): SavedUserState {
     const raw = window.localStorage.getItem(storageKey(customerId));
     if (raw) {
       const parsed = JSON.parse(raw) as SavedUserState;
-      if (parsed?.progress) return { ...parsed, forCustomer: customerId };
+      if (parsed?.progress) {
+        const budgets = (parsed.budgets ?? []).map(sanitizeSavedBudget).filter((b): b is SavedBudget => b !== null);
+        const legacy = !parsed.budgets && parsed.budget ? sanitizeBudget(parsed.budget) : null;
+        if (legacy) budgets.push({ id: newId(), budget: legacy, createdAt: new Date().toISOString() });
+        return { ...parsed, budgets, budget: undefined, forCustomer: customerId };
+      }
     }
   } catch {
     // Ignore storage errors
   }
   return buildInitialState(customerId);
+}
+
+// Mikko's memory lives in Postgres; the copy in localStorage covers the moments
+// the server can't be reached, and is pushed up on the next load.
+async function fetchServerMemory(customerId: string): Promise<MikkoMemory[] | null> {
+  try {
+    const res = await fetch(`/api/customers/${customerId}/memory`);
+    if (!res.ok) return null;
+    const body = (await res.json()) as { memory?: unknown[] };
+    return (body.memory ?? []).map(sanitizeMemoryEntry).filter((m): m is MikkoMemory => m !== null);
+  } catch {
+    return null;
+  }
+}
+
+function saveServerMemory(customerId: string, entries: MikkoMemory[]) {
+  if (!entries.length) return;
+  fetch(`/api/customers/${customerId}/memory`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ entries }),
+  }).catch(() => {});
+}
+
+// Budgets follow the same pattern: Postgres first, localStorage as the fallback copy.
+async function fetchServerBudgets(customerId: string): Promise<SavedBudget[] | null> {
+  try {
+    const res = await fetch(`/api/customers/${customerId}/budgets`);
+    if (!res.ok) return null;
+    const body = (await res.json()) as { budgets?: unknown[] };
+    return (body.budgets ?? []).map(sanitizeSavedBudget).filter((b): b is SavedBudget => b !== null);
+  } catch {
+    return null;
+  }
+}
+
+function saveServerBudgets(customerId: string, budgets: SavedBudget[]) {
+  if (!budgets.length) return;
+  fetch(`/api/customers/${customerId}/budgets`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ budgets }),
+  }).catch(() => {});
+}
+
+// XP, coins and Locker items: one record per customer, the newest copy wins.
+// `undefined` means the server can't be reached; `null` means nothing stored yet.
+async function fetchServerProgress(
+  customerId: string,
+): Promise<{ progress: PlayerProgress; at: string } | null | undefined> {
+  try {
+    const res = await fetch(`/api/customers/${customerId}/progress`);
+    if (!res.ok) return undefined;
+    const body = (await res.json()) as { progress?: unknown; at?: string };
+    const progress = sanitizeProgress(body.progress);
+    return progress && body.at ? { progress, at: body.at } : null;
+  } catch {
+    return undefined;
+  }
+}
+
+function saveServerProgress(customerId: string, progress: PlayerProgress, at: string) {
+  fetch(`/api/customers/${customerId}/progress`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ progress, at }),
+  }).catch(() => {});
 }
 
 const QUICK_CHIPS = [
@@ -137,7 +246,6 @@ export default function App() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [ledgerReady, setLedgerReady] = useState(false);
   const [asking, setAsking] = useState(false);
-  const [history, setHistory] = useState<{ role: 'user' | 'mentor'; text: string }[]>([]);
   const [userState, setUserState] = useState<SavedUserState | null>(null);
   const [budgetOpen, setBudgetOpen] = useState(false);
   const [overviewOpen, setOverviewOpen] = useState(false);
@@ -152,6 +260,12 @@ export default function App() {
   const [customTurn, setCustomTurn] = useState<ActiveTurn | null>(null);
 
   const progress = userState?.progress;
+  // The progress object last stored on the server; `ready` once the server copy is in.
+  const progressSync = useRef<{ customerId: string | null; ready: boolean; sent: PlayerProgress | null }>({
+    customerId: null,
+    ready: false,
+    sent: null,
+  });
 
   useEffect(() => {
     document.body.dataset.state = 'playing';
@@ -193,20 +307,60 @@ export default function App() {
     if (!customerId) return;
     let cancel = false;
     setLedgerReady(false);
-    setUserState(loadState(customerId));
-    setHistory([]);
+    const local = loadState(customerId);
+    setUserState(local);
     setCustomTurn(null);
     setLevelUpToast(null);
     setLockerFeedback(null);
     setOverviewOpen(false);
     setTopicsOpen(false);
-    fetch(`/api/customers/${customerId}`)
-      .then((res) => {
+    progressSync.current = { customerId, ready: false, sent: null };
+    Promise.all([
+      fetch(`/api/customers/${customerId}`).then((res) => {
         if (!res.ok) throw new Error('customer');
         return res.json() as Promise<{ transactions: Transaction[] }>;
-      })
-      .then((data) => {
+      }),
+      fetchServerMemory(customerId),
+      fetchServerBudgets(customerId),
+      fetchServerProgress(customerId),
+    ])
+      .then(([data, serverMemory, serverBudgets, serverProgress]) => {
         if (cancel) return;
+        if (serverProgress && (local.progressAt ?? '') <= serverProgress.at) {
+          progressSync.current = { customerId, ready: true, sent: serverProgress.progress };
+          setUserState((prev) =>
+            prev && prev.forCustomer === customerId
+              ? { ...prev, progress: serverProgress.progress, progressAt: serverProgress.at }
+              : prev,
+          );
+        } else {
+          if (serverProgress !== undefined) {
+            saveServerProgress(customerId, local.progress, local.progressAt ?? new Date().toISOString());
+          }
+          progressSync.current = { customerId, ready: true, sent: local.progress };
+        }
+        if (serverBudgets) {
+          const merged = mergeBudgets(serverBudgets, local.budgets ?? []);
+          const onServer = new Map(serverBudgets.map((b) => [b.id, b]));
+          saveServerBudgets(
+            customerId,
+            merged.filter((b) => !onServer.has(b.id) || (b.endedAt && !onServer.get(b.id)!.endedAt)),
+          );
+          setUserState((prev) =>
+            prev && prev.forCustomer === customerId ? { ...prev, budgets: merged } : prev,
+          );
+        }
+        if (serverMemory) {
+          const localMemory = (local.memory ?? []).map(sanitizeMemoryEntry).filter((m): m is MikkoMemory => m !== null);
+          const merged = mergeMemory(serverMemory, localMemory);
+          const serverAt = new Map(serverMemory.map((m) => [m.questId, m.at]));
+          saveServerMemory(customerId, merged.filter((m) => (serverAt.get(m.questId) ?? '') < m.at));
+          setUserState((prev) =>
+            prev && prev.forCustomer === customerId
+              ? { ...prev, memory: merged, overrides: withMemoryOverrides(prev.overrides, merged) }
+              : prev,
+          );
+        }
         setTransactions(data.transactions);
         setLedgerReady(true);
       })
@@ -217,6 +371,16 @@ export default function App() {
       cancel = true;
     };
   }, [customerId]);
+
+  useEffect(() => {
+    const sync = progressSync.current;
+    if (!progress || !customerId || !sync.ready || sync.customerId !== customerId) return;
+    if (progress === sync.sent) return;
+    const at = new Date().toISOString();
+    sync.sent = progress;
+    saveServerProgress(customerId, progress, at);
+    setUserState((prev) => (prev && prev.progress === progress ? { ...prev, progressAt: at } : prev));
+  }, [progress, customerId]);
 
   useEffect(() => {
     if (!customerId || !userState || userState.forCustomer !== customerId) return;
@@ -250,8 +414,9 @@ export default function App() {
         userState?.overrides ?? [],
         userState?.resolvedQuestIds ?? [],
         false,
+        userState?.memory ?? [],
       ),
-    [allTxs, userState?.overrides, userState?.resolvedQuestIds],
+    [allTxs, userState?.overrides, userState?.resolvedQuestIds, userState?.memory],
   );
 
   const activeQuest = activeQuests[0] ?? null;
@@ -261,7 +426,8 @@ export default function App() {
     [visibleTxs, userState?.overrides, latestMonth],
   );
 
-  const budget = userState?.budget ?? null;
+  const budgets = userState?.budgets ?? [];
+  const budget = activeBudget(budgets)?.budget ?? null;
   const budgetSuggestion = useMemo(
     () => suggestBudget(visibleTxs, userState?.overrides ?? []),
     [visibleTxs, userState?.overrides],
@@ -358,11 +524,14 @@ export default function App() {
       : `${moneyMood.headline} Ask me about taxis, safe-to-spend, or what-ifs.`;
 
   const handleSaveBudget = (next: Budget | null) => {
-    const firstTime = !userState.budget && next;
+    const firstTime = budgets.length === 0 && next;
+    const nextBudgets = saveBudgetVersion(budgets, next, new Date().toISOString(), newId());
+    const changed = nextBudgets.filter((b) => !budgets.some((o) => o.id === b.id && o.endedAt === b.endedAt));
+    saveServerBudgets(customerId, changed);
     setUserState((prev) => {
       if (!prev) return prev;
       const xp = prev.progress.xp + (firstTime ? 20 : 0);
-      return { ...prev, budget: next, progress: { ...prev.progress, xp, level: levelFromXp(xp) } };
+      return { ...prev, budgets: nextBudgets, progress: { ...prev.progress, xp, level: levelFromXp(xp) } };
     });
     setBudgetOpen(false);
     setCustomTurn(
@@ -488,7 +657,8 @@ export default function App() {
 
   const handleResetDemo = () => {
     setUserState(buildInitialState(customerId));
-    setHistory([]);
+    fetch(`/api/customers/${customerId}/memory`, { method: 'DELETE' }).catch(() => {});
+    fetch(`/api/customers/${customerId}/budgets`, { method: 'DELETE' }).catch(() => {});
     setCustomTurn(null);
     setLevelUpToast(null);
     setLockerFeedback(null);
@@ -519,6 +689,8 @@ export default function App() {
     const nextLevel = levelFromXp(nextXp);
     const leveledUp = nextLevel > oldLevel;
 
+    const remembered = memoryFromQuest({ quest: activeQuest, tx, outcome: 'answered', choiceId });
+    saveServerMemory(customerId, [remembered]);
     setUserState((prev) => {
       if (!prev) return prev;
       return {
@@ -527,6 +699,7 @@ export default function App() {
           ? [...prev.overrides, res.override]
           : prev.overrides,
         resolvedQuestIds: [...prev.resolvedQuestIds, activeQuest.id],
+        memory: rememberQuest(prev.memory ?? [], remembered),
         progress: {
           ...prev.progress,
           xp: nextXp,
@@ -568,6 +741,21 @@ export default function App() {
     }
   };
 
+  const handleSkipQuest = () => {
+    if (!activeQuest) return;
+    const tx = allTxs.find((t) => t.id === activeQuest.txId);
+    if (!tx) return;
+    const skipped = memoryFromQuest({ quest: activeQuest, tx, outcome: 'skipped' });
+    saveServerMemory(customerId, [skipped]);
+    setUserState((prev) =>
+      prev ? { ...prev, memory: rememberQuest(prev.memory ?? [], skipped) } : prev,
+    );
+    setCustomTurn({
+      mood: 'deadpan',
+      text: `Fine, I'll leave the €${activeQuest.amount.toFixed(2)} at ${skipped.merchant} alone. I won't ask about it again.`,
+    });
+  };
+
   const handleOpenOfferedChart = () => {
     if (!customTurn?.offerWhatIf) return;
     const { monthlyAmount, months, label } = customTurn.offerWhatIf;
@@ -605,19 +793,29 @@ export default function App() {
             customerId,
             query: trimmed,
             overrides: userState.overrides,
-            budget: userState.budget ?? null,
-            history,
+            budget,
+            budgets,
+            history: userState.chat ?? [],
+            // the server reads Postgres; this copy is only used when that's unavailable
+            memory: userState.memory ?? [],
           }),
         }),
         new Promise((resolve) => window.setTimeout(resolve, 680)),
       ]);
       const answer = await res.json();
       if (!res.ok) throw new Error(answer.error || 'Chat failed');
-      setHistory((prev) => [
-        ...prev,
-        { role: 'user', text: trimmed },
-        { role: 'mentor', text: answer.text },
-      ]);
+      setUserState((prev) =>
+        prev
+          ? {
+              ...prev,
+              chat: [
+                ...(prev.chat ?? []),
+                { role: 'user' as const, text: trimmed },
+                { role: 'mentor' as const, text: answer.text },
+              ].slice(-CHAT_KEEP),
+            }
+          : prev,
+      );
       setCustomTurn({
         mood: answer.chart ? 'pointing' : answer.mood,
         text: answer.text,
@@ -1130,6 +1328,16 @@ export default function App() {
                         </span>
                       </button>
                     ))}
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        data-testid="quest-skip"
+                        onClick={handleSkipQuest}
+                        className="min-h-[32px] px-2 text-[11px] font-semibold underline underline-offset-2 cursor-pointer text-[var(--app-text-muted)] hover:text-[var(--app-text)]"
+                      >
+                        Not now, don't ask again
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -1274,6 +1482,7 @@ export default function App() {
         {budgetOpen && (
           <BudgetView
             budget={budget}
+            history={budgets}
             suggestion={budgetSuggestion}
             status={budgetStatus}
             onSave={handleSaveBudget}

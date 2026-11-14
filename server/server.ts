@@ -8,7 +8,25 @@ import { fileURLToPath } from "node:url";
 import { createServer as createViteServer } from "vite";
 import { answerWithGemini } from "./chat.ts";
 import { buildFinlandBoard } from "./compare.ts";
-import { createPool, loadBenchmarks, loadCustomer, loadCustomerIndex, loadMortgage, loadMortgageStats } from "./db.mjs";
+import {
+  clearBudgets,
+  clearMemory,
+  clearProgress,
+  createPool,
+  ensureUserTables,
+  loadBenchmarks,
+  loadBudgets,
+  loadCustomer,
+  loadCustomerIndex,
+  loadMemory,
+  loadMortgage,
+  loadMortgageStats,
+  loadProgress,
+  saveBudget,
+  saveMemoryEntry,
+  saveProgress,
+} from "./db.mjs";
+import { sanitizeMemoryEntry, sanitizeProgress, sanitizeSavedBudget } from "../src/game/engine.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 if (existsSync(join(ROOT, ".env"))) process.loadEnvFile(join(ROOT, ".env"));
@@ -29,6 +47,16 @@ async function getCustomer(id: string | null | undefined) {
 }
 
 await Promise.all(index.customers.map((customer) => getCustomer(customer.id)));
+
+// Without the tables (no CREATE rights, say) the app still runs; memory,
+// budgets and progress then stay in the browser.
+let userTablesReady = false;
+try {
+  await ensureUserTables(pool);
+  userTablesReady = true;
+} catch (error) {
+  console.warn("Memory, budgets and progress stay in the browser: could not create the tables:", error instanceof Error ? error.message : error);
+}
 
 const app = express();
 app.use(express.json({ limit: "256kb" }));
@@ -71,6 +99,126 @@ app.get("/api/customers/:id/compare", async (req, res) => {
   res.json(board);
 });
 
+// Mikko's memory: what the customer did each time he asked about an expense.
+app.get("/api/customers/:id/memory", async (req, res) => {
+  if (!userTablesReady) return res.status(503).json({ error: "Memory is not stored on the server." });
+  if (!(await getCustomer(req.params.id))) return res.status(404).json({ error: "Customer not found" });
+  try {
+    res.json({ memory: (await loadMemory(pool, req.params.id)).map(sanitizeMemoryEntry).filter(Boolean) });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Could not load Mikko's memory." });
+  }
+});
+
+app.put("/api/customers/:id/memory", async (req, res) => {
+  if (!userTablesReady) return res.status(503).json({ error: "Memory is not stored on the server." });
+  if (!(await getCustomer(req.params.id))) return res.status(404).json({ error: "Customer not found" });
+  const raw = Array.isArray(req.body?.entries) ? req.body.entries.slice(0, 200) : [];
+  const entries = raw.map(sanitizeMemoryEntry).filter(Boolean);
+  if (!entries.length) return res.status(400).json({ error: "No valid memory entries." });
+  try {
+    for (const entry of entries) await saveMemoryEntry(pool, req.params.id, entry);
+    res.json({ saved: entries.length });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Could not save Mikko's memory." });
+  }
+});
+
+app.delete("/api/customers/:id/memory", async (req, res) => {
+  if (!userTablesReady) return res.status(503).json({ error: "Memory is not stored on the server." });
+  if (!(await getCustomer(req.params.id))) return res.status(404).json({ error: "Customer not found" });
+  try {
+    await clearMemory(pool, req.params.id);
+    res.json({ cleared: true });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Could not clear Mikko's memory." });
+  }
+});
+
+// XP, level, coins and Locker items.
+app.get("/api/customers/:id/progress", async (req, res) => {
+  if (!userTablesReady) return res.status(503).json({ error: "Progress is not stored on the server." });
+  if (!(await getCustomer(req.params.id))) return res.status(404).json({ error: "Customer not found" });
+  try {
+    const saved = await loadProgress(pool, req.params.id);
+    const progress = saved && sanitizeProgress(saved.progress);
+    res.json(progress ? { progress, at: saved.at } : { progress: null });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Could not load progress." });
+  }
+});
+
+app.put("/api/customers/:id/progress", async (req, res) => {
+  if (!userTablesReady) return res.status(503).json({ error: "Progress is not stored on the server." });
+  if (!(await getCustomer(req.params.id))) return res.status(404).json({ error: "Customer not found" });
+  const progress = sanitizeProgress(req.body?.progress);
+  const at = Date.parse(req.body?.at);
+  if (!progress || Number.isNaN(at)) return res.status(400).json({ error: "No valid progress." });
+  try {
+    // A client clock running ahead must not lock out later writes from other devices.
+    const stamp = new Date(Math.min(at, Date.now())).toISOString();
+    res.json({ saved: await saveProgress(pool, req.params.id, progress, stamp) });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Could not save progress." });
+  }
+});
+
+app.delete("/api/customers/:id/progress", async (req, res) => {
+  if (!userTablesReady) return res.status(503).json({ error: "Progress is not stored on the server." });
+  if (!(await getCustomer(req.params.id))) return res.status(404).json({ error: "Customer not found" });
+  try {
+    await clearProgress(pool, req.params.id);
+    res.json({ cleared: true });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Could not clear progress." });
+  }
+});
+
+// Every budget the customer made: the active one and the ones it replaced.
+app.get("/api/customers/:id/budgets", async (req, res) => {
+  if (!userTablesReady) return res.status(503).json({ error: "Budgets are not stored on the server." });
+  if (!(await getCustomer(req.params.id))) return res.status(404).json({ error: "Customer not found" });
+  try {
+    res.json({ budgets: (await loadBudgets(pool, req.params.id)).map(sanitizeSavedBudget).filter(Boolean) });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Could not load budgets." });
+  }
+});
+
+app.put("/api/customers/:id/budgets", async (req, res) => {
+  if (!userTablesReady) return res.status(503).json({ error: "Budgets are not stored on the server." });
+  if (!(await getCustomer(req.params.id))) return res.status(404).json({ error: "Customer not found" });
+  const raw = Array.isArray(req.body?.budgets) ? req.body.budgets.slice(0, 100) : [];
+  const budgets = raw.map(sanitizeSavedBudget).filter(Boolean);
+  if (!budgets.length) return res.status(400).json({ error: "No valid budgets." });
+  try {
+    for (const saved of budgets) await saveBudget(pool, req.params.id, saved);
+    res.json({ saved: budgets.length });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Could not save budgets." });
+  }
+});
+
+app.delete("/api/customers/:id/budgets", async (req, res) => {
+  if (!userTablesReady) return res.status(503).json({ error: "Budgets are not stored on the server." });
+  if (!(await getCustomer(req.params.id))) return res.status(404).json({ error: "Customer not found" });
+  try {
+    await clearBudgets(pool, req.params.id);
+    res.json({ cleared: true });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Could not clear budgets." });
+  }
+});
+
 app.post("/api/chat", async (req, res) => {
   if (!process.env.GEMINI_API_KEY) {
     return res.status(503).json({ error: "No GEMINI_API_KEY in .env. Add it and restart." });
@@ -79,13 +227,22 @@ app.post("/api/chat", async (req, res) => {
   const data = (await getCustomer(body.customerId)) || (await getCustomer(index.default));
   if (!data) return res.status(404).json({ error: "Customer not found" });
   try {
+    const id = data.customer.id;
+    const [memory, budgets] = userTablesReady
+      ? await Promise.all([
+          loadMemory(pool, id).catch(() => body.memory),
+          loadBudgets(pool, id).catch(() => body.budgets),
+        ])
+      : [body.memory, body.budgets];
     const answer = await answerWithGemini({
       query: body.query,
       customer: data.customer,
       transactions: data.transactions,
       overrides: body.overrides,
       budget: body.budget,
+      budgets,
       history: body.history,
+      memory,
       benchmarks,
     });
     res.json(answer);

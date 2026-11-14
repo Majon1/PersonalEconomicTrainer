@@ -50,10 +50,24 @@ npm run fetch:benchmarks # refresh the Statistics Finland row in Postgres
 |---|---|
 | `src/` | The phone UI: Mikko's room, baskets, dialogue, charts, locker |
 | `src/game/engine.ts` | Baskets, quests, safe-to-spend, and the what-if simulation |
-| `server/db.mjs` | Customers, transactions, and benchmarks from Postgres |
+| `server/db.mjs` | Customers, transactions, and benchmarks from Postgres, plus Mikko's memory (`mikko_memory`) budgets (`mikko_budgets`) and XP (`mikko_progress`) |
 | `server/chat.ts` | Gemini tool loop. Tools compute the numbers; `speak` is the reply |
 | `server/server.ts` | API and the Vite dev server on port 3000 |
 | `scripts/fetch-benchmarks.mjs` | Household Budget Survey 2022 and the consumer price index, from Statistics Finland |
+
+### Mikko's memory
+
+When Mikko asks about an expense, what the customer does is saved: the answer they picked and the basket it went into, or that they skipped it. He never asks about that expense again, and chat is told what was already settled. It lives in a `mikko_memory` table (one row per customer and question).
+
+### Budgets
+
+Every budget a customer saves is kept in a `mikko_budgets` table. Saving a new one ends the one before rather than overwriting it, and "Remove budget" ends the active one, so the budget screen lists them all under "Your budgets", with "Use again" on the old ones. Chat uses the active budget and knows the earlier ones.
+
+### XP and Locker
+
+XP, level, coins and the Locker items a customer bought or equipped are kept in `mikko_progress`, one row per customer. Each change is stamped with the time it happened, and the newest copy wins, so an old tab or browser can't roll XP back. The server checks what it is sent: the level is worked out from the XP, and only real shop items that are unlocked can be equipped.
+
+`mikko_memory`, `mikko_budgets` and `mikko_progress` are the only tables the app writes to; the server creates them on start. If it can't, everything stays in the browser instead. "Reset demo progress" in the Locker clears memory and budgets and resets XP for that customer.
 
 Chat uses the Gemini Interactions API with `store: false`, so the conversation is not kept on Google's side after the answer. The server sends the recent turns again on the next question. Your question and the tool summaries (totals, not the full ledger) are what get sent to the model.
 

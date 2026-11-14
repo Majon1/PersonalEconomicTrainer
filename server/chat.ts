@@ -5,6 +5,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { SEASONALITY } from "../src/game/seasonality.ts";
 import {
+  activeBudget,
   checkPurchase,
   christmasQuarterGap,
   computeBaskets,
@@ -20,9 +21,11 @@ import {
   getLatestMonthKey,
   isNonSpending,
   resolveTxBasket,
+  sanitizeBudget,
+  sanitizeSavedBudget,
   simulateWhatIf,
 } from "../src/game/engine.ts";
-import type { Budget, ChartPayload, LabelOverride, MentorMood, Transaction, WhatIfAsset } from "../src/game/types.ts";
+import type { Budget, ChartPayload, LabelOverride, MentorMood, SavedBudget, Transaction, WhatIfAsset } from "../src/game/types.ts";
 import { buildFinlandBoard } from "./compare.ts";
 
 const MODEL = process.env.GEMINI_MODEL || "gemini-4-hydrogen";
@@ -216,18 +219,45 @@ function sanitizeOverrides(raw: unknown): LabelOverride[] {
   }).slice(0, 80);
 }
 
-function sanitizeBudget(raw: unknown): Budget | null {
-  if (!raw || typeof raw !== "object") return null;
-  const b = raw as Record<string, unknown>;
-  const n = (v: unknown) => Math.max(0, Math.min(100000, Number(v) || 0));
-  const categories: Record<string, number> = {};
-  if (b.categories && typeof b.categories === "object") {
-    for (const [k, v] of Object.entries(b.categories as Record<string, unknown>).slice(0, 12)) {
-      if (n(v) > 0) categories[String(k).slice(0, 40)] = n(v);
-    }
-  }
-  const budget = { slips: n(b.slips), nice_to_have: n(b.nice_to_have), categories };
-  return budget.slips || budget.nice_to_have || Object.keys(categories).length ? budget : null;
+function budgetText(b: Budget) {
+  const parts = [
+    b.slips ? `slips €${b.slips}` : "",
+    b.nice_to_have ? `nice to have €${b.nice_to_have}` : "",
+    ...Object.entries(b.categories).map(([k, v]) => `${k} €${v}`),
+  ].filter(Boolean);
+  return parts.join(", ");
+}
+
+/** Budgets they had before the current one, newest first, as lines for the system prompt. */
+function pastBudgetLines(budgets: SavedBudget[]): string[] {
+  return budgets
+    .filter((b) => b.endedAt)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, 5)
+    .map((b) => `- ${b.createdAt.slice(0, 10)} to ${b.endedAt!.slice(0, 10)}: ${budgetText(b.budget)}`);
+}
+
+const BASKET_NAMES: Record<string, string> = {
+  mandatory_regular: "mandatory regular",
+  mandatory_irregular: "mandatory irregular",
+  slips: "slips",
+  nice_to_have: "nice to have",
+};
+
+/** What the user already told Mikko (or chose not to), as lines for the system prompt. */
+function memoryLines(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const text = (v: unknown, max = 60) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, max) : "");
+  return raw
+    .filter((m) => m && typeof m === "object" && (m.outcome === "answered" || m.outcome === "skipped"))
+    .slice(-30)
+    .map((m) => {
+      const amount = Number(m.amount);
+      const what = `€${Number.isFinite(amount) ? amount.toFixed(2) : "?"} at ${text(m.merchant) || "a merchant"} on ${text(m.date, 10) || "an earlier date"}`;
+      if (m.outcome === "skipped") return `- ${what}: they chose not to say. Do not ask about it again.`;
+      const basket = BASKET_NAMES[m.basket] ? `, filed as ${BASKET_NAMES[m.basket]}` : "";
+      return `- ${what}: they said "${text(m.answer) || text(m.customLabel)}"${basket}.`;
+    });
 }
 
 export async function answerWithGemini(params: {
@@ -236,14 +266,22 @@ export async function answerWithGemini(params: {
   transactions: Transaction[];
   overrides: unknown;
   budget?: unknown;
+  /** every budget they made; when given, the active one wins over `budget` */
+  budgets?: unknown;
   history: { role?: string; text?: string }[];
+  memory?: unknown;
   benchmarks: any;
 }) {
   const query = String(params.query || "").trim().slice(0, 2000);
   if (!query) return { text: "Ask me something about the money.", mood: "deadpan" as MentorMood };
 
   const overrides = sanitizeOverrides(params.overrides);
-  const budget = sanitizeBudget(params.budget);
+  const savedBudgets = Array.isArray(params.budgets)
+    ? params.budgets.map(sanitizeSavedBudget).filter((b): b is SavedBudget => b !== null)
+    : null;
+  const budget = savedBudgets ? activeBudget(savedBudgets)?.budget ?? null : sanitizeBudget(params.budget);
+  const pastBudgets = pastBudgetLines(savedBudgets ?? []);
+  const remembered = memoryLines(params.memory);
   const visible = filterTransactions(params.transactions, false);
   const latestMonth = getLatestMonthKey(visible);
   const today = visible.map((t) => t.date).sort().pop() ?? latestMonth;
@@ -433,10 +471,14 @@ Baskets: two you must pay, two you choose.
 - nice to have: bigger extras you could live without if money got tight (travel, hobbies, events, shopping, dinners out). Never call them unnecessary.
 Money moved to investments is saving, not spending.
 Good habits: an emergency fund of 3 months of money going out (emergency_fund). Buying treats while the rent isn't covered makes you angry (money_mood); say so honestly but kindly and name the purchase and what was still due.
-Budget: ${budget ? `the user set monthly limits (slips €${budget.slips}, nice to have €${budget.nice_to_have}${Object.keys(budget.categories).length ? `, ${Object.entries(budget.categories).map(([k, v]) => `${k} €${v}`).join(", ")}` : ""}).` : "the user has no budget yet; you can suggest setting one (budget_status gives a suggestion)."}
+Budget: ${budget ? `the user set monthly limits (${budgetText(budget)}).` : `the user has no budget ${pastBudgets.length ? "right now" : "yet"}; you can suggest setting one (budget_status gives a suggestion).`}${pastBudgets.length ? `
+Budgets they had before (they can reuse one from the budget screen):
+${pastBudgets.join("\n")}` : ""}
 Steer them clear of buys they'd regret: whenever they mention buying, wanting or getting something, call check_purchase and pass on its verdict (go / think twice / skip it) with the main reason. Use suspicious for think, bluff_caught for stop, impressed for go. Never forbid; they decide.
 Seasons: Finns spend more in some months (Christmas: shops +14%, and in October–December the average Finn spends about €${christmasQuarterGap()} a month more than in January–March; Black Friday: electronics +27%; summer: restaurants and hotels up) and less in January and February. Use seasonal_pattern for these questions, and when a higher month is normal for the season, say so rather than blaming them.
-Rules:
+${remembered.length ? `Already settled with the user (their word stands; never ask about these expenses again, and use the answers when they matter):
+${remembered.join("\n")}
+` : ""}Rules:
 - Never invent or estimate a number. Call a tool first, then call speak exactly once.
 - Quote at most three figures from the tool result. Use euros like €38 or €38.50.
 - If a chart tool ran (spend_series, safe_to_spend, compare_to_finland, what_if, emergency_fund, seasonal_pattern), set mood to pointing.
