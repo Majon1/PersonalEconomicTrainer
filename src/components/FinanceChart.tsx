@@ -18,7 +18,7 @@ export function FinanceChart({
   if (chart.kind === 'bar') {
     const maxVal = Math.max(1, ...chart.bars.map((b) => b.value));
     return (
-      <div className="pixel-card p-3.5" data-testid="chart-bar">
+      <div className="pixel-card p-4" data-testid="chart-bar">
         <div className="flex items-baseline justify-between gap-2 mb-3">
           <div>
             <h3 className="text-sm font-semibold">{chart.title}</h3>
@@ -27,11 +27,11 @@ export function FinanceChart({
           <span className="font-num text-xs text-[var(--app-text-muted)]">EUR</span>
         </div>
 
-        <div className="space-y-2.5">
+        <div className="space-y-3">
           {chart.bars.map((bar) => {
             const widthPct = Math.max(4, Math.round((bar.value / maxVal) * 100));
             return (
-              <div key={bar.label} className="grid grid-cols-[44px_1fr_68px] items-center gap-2.5">
+              <div key={bar.label} className="grid grid-cols-[44px_1fr_68px] items-center gap-3">
                 <span className="text-xs font-medium text-[var(--app-text-muted)]">
                   {bar.label}
                 </span>
@@ -65,8 +65,8 @@ export function FinanceChart({
 
   if (chart.kind === 'safe_to_spend') {
     return (
-      <div className="pixel-card p-3.5" data-testid="chart-safe-to-spend">
-        <div className="flex items-baseline justify-between mb-2.5">
+      <div className="pixel-card p-4" data-testid="chart-safe-to-spend">
+        <div className="flex items-baseline justify-between mb-3">
           <h3 className="text-sm font-semibold">{chart.title}</h3>
           <span className="font-num text-xs text-[var(--app-text-muted)]">
             Balance €{chart.currentBalance.toFixed(2)}
@@ -81,8 +81,8 @@ export function FinanceChart({
               border: '1px solid var(--app-border)',
             }}
           >
-            <div className="text-[11px] text-[var(--app-text-muted)]">Locked Bills</div>
-            <div className="font-num text-sm font-bold mt-0.5">
+            <div className="text-xs text-[var(--app-text-muted)]">Locked Bills</div>
+            <div className="font-num text-sm font-bold mt-1">
               €{chart.reservedRegular.toFixed(0)}
             </div>
           </div>
@@ -93,8 +93,8 @@ export function FinanceChart({
               border: '1px solid var(--app-border)',
             }}
           >
-            <div className="text-[11px] text-[var(--app-text-muted)]">Surprise Shield</div>
-            <div className="font-num text-sm font-bold mt-0.5">
+            <div className="text-xs text-[var(--app-text-muted)]">Surprise Shield</div>
+            <div className="font-num text-sm font-bold mt-1">
               €{chart.surpriseBuffer.toFixed(0)}
             </div>
           </div>
@@ -106,8 +106,8 @@ export function FinanceChart({
               border: '1px solid var(--app-border)',
             }}
           >
-            <div className="text-[11px] opacity-90">Safe / Week</div>
-            <div className="font-num text-sm font-bold mt-0.5">
+            <div className="text-xs opacity-90">Safe / Week</div>
+            <div className="font-num text-sm font-bold mt-1">
               €{chart.safeWeekly.toFixed(2)}
             </div>
           </div>
@@ -126,7 +126,7 @@ export function FinanceChart({
       ...chart.rows.flatMap((r) => [r.yours, r.finlandAvg]),
     );
     return (
-      <div className="pixel-card p-3.5" data-testid="chart-peer-compare">
+      <div className="pixel-card p-4" data-testid="chart-peer-compare">
         <div className="mb-3">
           <h3 className="text-sm font-semibold">{chart.title}</h3>
           <p className="text-xs text-[var(--app-text-muted)]">{chart.subtitle}</p>
@@ -154,7 +154,6 @@ export function FinanceChart({
                         ? 'var(--app-warning)'
                         : 'var(--app-accent)',
                     }}
-                    title={`You: €${row.yours.toFixed(0)}`}
                   />
                   <div
                     className="h-2 opacity-65"
@@ -162,7 +161,6 @@ export function FinanceChart({
                       width: `${avgW}%`,
                       backgroundColor: 'var(--app-text-muted)',
                     }}
-                    title={`Stats Finland Avg: €${row.finlandAvg}`}
                   />
                 </div>
               </div>
@@ -170,7 +168,7 @@ export function FinanceChart({
           })}
         </div>
 
-        <div className="flex items-center gap-4 mt-3 text-[11px] text-[var(--app-text-muted)]">
+        <div className="flex items-center gap-4 mt-3 text-xs text-[var(--app-text-muted)]">
           <span>Top bar: Your spend</span>
           <span>·</span>
           <span>Bottom bar: Stats Finland peer avg</span>
@@ -183,12 +181,12 @@ export function FinanceChart({
     // Bars grow up or down from the "average month" line (100).
     const span = Math.max(20, ...chart.months.flatMap((m) => [Math.abs((m.yours ?? 100) - 100), Math.abs(m.finland - 100)]));
     const H = 56; // px from the line to the top or bottom
-    const bar = (v: number | null, color: string, faded: boolean, who: string, month: string) => {
+    const bar = (v: number | null, color: string, faded: boolean) => {
       if (v == null) return <div className="flex-1" />;
       const d = v - 100;
       const h = Math.max(1, Math.round((Math.abs(d) / span) * H));
       return (
-        <div className="flex-1 relative" style={{ height: H * 2 }} title={`${month} · ${who}: ${d >= 0 ? '+' : ''}${d}%`}>
+        <div className="flex-1 relative" style={{ height: H * 2 }}>
           <div
             className="absolute left-0 right-0"
             style={{
@@ -206,9 +204,9 @@ export function FinanceChart({
         <div className="mb-2 flex items-start justify-between gap-2">
           <div className="min-w-0">
             <h3 className="font-num text-xs font-bold tracking-wide uppercase">{chart.title}</h3>
-            <p className="text-[11px] text-[var(--app-text-muted)]">Up = more than an average month, down = less</p>
+            <p className="text-xs text-[var(--app-text-muted)]">Up = more than an average month, down = less</p>
           </div>
-          <div className="flex flex-col items-end gap-0.5 shrink-0 text-[10px] font-semibold">
+          <div className="flex flex-col items-end gap-1 shrink-0 text-xs font-semibold">
             <span className="flex items-center gap-1"><i className="w-2.5 h-2 inline-block" style={{ backgroundColor: 'var(--app-text)' }} />You</span>
             <span className="flex items-center gap-1"><i className="w-2.5 h-2 inline-block opacity-55" style={{ backgroundColor: 'var(--app-text-muted)' }} />Finland</span>
           </div>
@@ -218,51 +216,51 @@ export function FinanceChart({
           <div className="flex gap-1">
             {chart.months.map((m) => (
               <div key={m.label} className="flex-1 flex gap-px">
-                {bar(m.yours, 'var(--app-text)', false, 'You', m.label)}
-                {bar(m.finland, 'var(--app-text-muted)', true, 'Finland', m.label)}
+                {bar(m.yours, 'var(--app-text)', false)}
+                {bar(m.finland, 'var(--app-text-muted)', true)}
               </div>
             ))}
           </div>
-          <div className="flex gap-1 mt-0.5">
+          <div className="flex gap-1 mt-1">
             {chart.months.map((m) => (
-              <span key={m.label} className="flex-1 text-center font-num text-[9px] text-[var(--app-text-muted)]">
+              <span key={m.label} className="flex-1 text-center font-num text-[11px] text-[var(--app-text-muted)]">
                 {m.label.slice(0, 1)}
               </span>
             ))}
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-1.5 mt-2 text-xs">
-          <div className="p-1.5" style={{ backgroundColor: 'var(--app-surface-muted)', border: '1px solid var(--app-border)' }}>
-            <div className="text-[10px] text-[var(--app-text-muted)]">Your busiest month</div>
+        <div className="grid grid-cols-2 gap-2 mt-2 text-xs">
+          <div className="p-2" style={{ backgroundColor: 'var(--app-surface-muted)', border: '1px solid var(--app-border)' }}>
+            <div className="text-xs text-[var(--app-text-muted)]">Your busiest month</div>
             <div className="font-semibold">{chart.yourPeak}</div>
           </div>
-          <div className="p-1.5" style={{ backgroundColor: 'var(--app-surface-muted)', border: '1px solid var(--app-border)' }}>
-            <div className="text-[10px] text-[var(--app-text-muted)]">Finland's busiest month</div>
+          <div className="p-2" style={{ backgroundColor: 'var(--app-surface-muted)', border: '1px solid var(--app-border)' }}>
+            <div className="text-xs text-[var(--app-text-muted)]">Finland's busiest month</div>
             <div className="font-semibold">{chart.finlandPeak}</div>
           </div>
         </div>
         {/* In euros: your average month per quarter vs the average Finn's */}
         <table className="w-full mt-2 text-xs" aria-label="Spending per month by quarter, in euros">
           <thead>
-            <tr className="font-num text-[10px] uppercase" style={{ backgroundColor: 'var(--app-surface-muted)' }}>
-              <th className="text-left font-bold px-1.5 py-1">Per month</th>
-              <th className="text-right font-bold px-1.5 py-1">You</th>
-              <th className="text-right font-bold px-1.5 py-1">Average Finn</th>
+            <tr className="font-num text-xs uppercase" style={{ backgroundColor: 'var(--app-surface-muted)' }}>
+              <th className="text-left font-bold px-2 py-1">Per month</th>
+              <th className="text-right font-bold px-2 py-1">You</th>
+              <th className="text-right font-bold px-2 py-1">Average Finn</th>
             </tr>
           </thead>
           <tbody>
             {chart.quarters.map((q, i) => (
               <tr key={q.label} className="border-b" style={{ borderColor: 'var(--app-border)' }}>
-                <td className="px-1.5 py-1">{q.label}</td>
-                <td className="px-1.5 py-1 text-right font-num">{q.yours != null ? `€${q.yours.toLocaleString('en-IE')}` : '–'}</td>
-                <td className="px-1.5 py-1 text-right font-num" style={{ fontWeight: i === 3 ? 700 : 400 }}>
+                <td className="px-2 py-1">{q.label}</td>
+                <td className="px-2 py-1 text-right font-num">{q.yours != null ? `€${q.yours.toLocaleString('en-IE')}` : '–'}</td>
+                <td className="px-2 py-1 text-right font-num" style={{ fontWeight: i === 3 ? 700 : 400 }}>
                   €{q.finland.toLocaleString('en-IE')}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
-        <p className="text-[10px] text-[var(--app-text-muted)] mt-1.5 leading-snug">
+        <p className="text-xs text-[var(--app-text-muted)] mt-2 leading-snug">
           Bars: shop sales, {chart.source}. Euros: {chart.quartersNote}
         </p>
       </div>
@@ -282,9 +280,9 @@ export function FinanceChart({
         <div className="mb-2 flex items-start justify-between gap-2">
           <div className="min-w-0">
             <h3 className="font-num text-xs font-bold tracking-wide uppercase">{chart.title}</h3>
-            <p className="text-[11px] text-[var(--app-text-muted)]">{chart.period} · {chart.priceNote}</p>
+            <p className="text-xs text-[var(--app-text-muted)]">{chart.period} · {chart.priceNote}</p>
           </div>
-          <div className="flex flex-col items-end gap-0.5 shrink-0 text-[10px] font-semibold">
+          <div className="flex flex-col items-end gap-1 shrink-0 text-xs font-semibold">
             <span className="flex items-center gap-1"><i className="w-2.5 h-2 inline-block" style={{ backgroundColor: 'var(--app-text)' }} />You</span>
             <span className="flex items-center gap-1"><i className="w-2.5 h-2 inline-block opacity-60" style={{ backgroundColor: 'var(--app-text-muted)' }} />Finland</span>
           </div>
@@ -292,7 +290,7 @@ export function FinanceChart({
 
         {/* Scoreboard header */}
         <div
-          className="grid grid-cols-[1fr_auto_auto_auto] gap-x-2 px-1.5 py-1 font-num text-[10px] font-bold uppercase"
+          className="grid grid-cols-[1fr_auto_auto_auto] gap-x-2 px-2 py-1 font-num text-xs font-bold uppercase"
           style={{ backgroundColor: 'var(--app-surface-muted)', border: '1px solid var(--app-border)' }}
         >
           <span>Category</span>
@@ -304,16 +302,16 @@ export function FinanceChart({
           {chart.rows.map((r) => {
             const v = VERDICT[r.verdict];
             return (
-              <li key={r.category} className="px-1.5 py-1" style={{ borderColor: 'var(--app-border)' }}>
+              <li key={r.category} className="px-2 py-1" style={{ borderColor: 'var(--app-border)' }}>
                 <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-2 items-center text-xs">
                   <span className="font-medium truncate">{r.category}</span>
                   <span className="font-num text-right w-12">€{r.yours.toFixed(0)}</span>
                   <span className="font-num text-right w-12 text-[var(--app-text-muted)]">€{r.finland.toFixed(0)}</span>
-                  <span className="font-num text-right w-12 text-[11px] font-bold" style={{ color: v.color }}>
+                  <span className="font-num text-right w-12 text-xs font-bold" style={{ color: v.color }}>
                     {v.icon} {v.label}
                   </span>
                 </div>
-                <div className="mt-0.5 space-y-px" aria-hidden="true">
+                <div className="mt-1 space-y-px" aria-hidden="true">
                   <div className="h-1" style={{ width: `${Math.max(1, (r.yours / max) * 100)}%`, backgroundColor: 'var(--app-text)' }} />
                   <div className="h-1 opacity-60" style={{ width: `${Math.max(1, (r.finland / max) * 100)}%`, backgroundColor: 'var(--app-text-muted)' }} />
                 </div>
@@ -324,20 +322,20 @@ export function FinanceChart({
 
         {/* Total row */}
         <div
-          className="grid grid-cols-[1fr_auto_auto_auto] gap-x-2 px-1.5 py-1.5 mt-1 text-xs font-bold items-center"
+          className="grid grid-cols-[1fr_auto_auto_auto] gap-x-2 px-2 py-2 mt-1 text-xs font-bold items-center"
           style={{ backgroundColor: 'var(--app-surface-muted)', border: '1px solid var(--app-border)' }}
         >
           <span>Total</span>
           <span className="font-num text-right w-12">€{chart.yoursTotal.toFixed(0)}</span>
           <span className="font-num text-right w-12 text-[var(--app-text-muted)]">€{chart.finlandTotal.toFixed(0)}</span>
           <span
-            className="font-num text-right w-12 text-[11px]"
+            className="font-num text-right w-12 text-xs"
             style={{ color: totalDiff > 0 ? 'var(--app-warning)' : 'var(--app-accent)' }}
           >
             {totalDiff > 0 ? '+' : '−'}€{Math.abs(totalDiff).toFixed(0)}
           </span>
         </div>
-        <p className="text-[10px] text-[var(--app-text-muted)] mt-1.5 leading-snug">
+        <p className="text-xs text-[var(--app-text-muted)] mt-2 leading-snug">
           {chart.caveat} Source: {chart.source}.
         </p>
       </div>
@@ -353,7 +351,7 @@ export function FinanceChart({
       chart.status === 'reached' ? 'var(--app-accent)' : chart.status === 'building' ? '#d97706' : 'var(--app-danger)';
     const label = chart.status === 'reached' ? '✓ Goal reached' : chart.status === 'building' ? '! Getting there' : '✕ Not yet';
     return (
-      <div className="pixel-card p-3.5" data-testid="chart-emergency-fund">
+      <div className="pixel-card p-4" data-testid="chart-emergency-fund">
         <div className="mb-3 flex items-start justify-between gap-2">
           <div>
             <h3 className="text-sm font-semibold">{chart.title}</h3>
@@ -361,7 +359,7 @@ export function FinanceChart({
               Goal: {chart.goalMonths} months of money going out = €{chart.target.toFixed(0)}
             </p>
           </div>
-          <span className="font-num text-[11px] font-bold shrink-0" style={{ color }}>
+          <span className="font-num text-xs font-bold shrink-0" style={{ color }}>
             {label}
           </span>
         </div>
@@ -378,8 +376,15 @@ export function FinanceChart({
           <div
             className="absolute -top-1 -bottom-1 w-0.5"
             style={{ left: `calc(${goalPct}% - 1px)`, backgroundColor: 'var(--app-text)' }}
-            title={`${chart.goalMonths}-month goal`}
           />
+        </div>
+        <div className="relative h-4 mt-1" aria-hidden="true">
+          <span
+            className="absolute font-num text-xs font-semibold whitespace-nowrap"
+            style={{ left: `${goalPct}%`, transform: goalPct > 70 ? 'translateX(-100%)' : 'translateX(-50%)' }}
+          >
+            {chart.goalMonths}-month goal
+          </span>
         </div>
         <div className="grid grid-cols-3 gap-2 mt-3 text-center">
           {[
@@ -387,8 +392,8 @@ export function FinanceChart({
             ['Months', chart.monthsCovered.toFixed(1)],
             [chart.balance >= chart.target ? 'Above goal' : 'To go', `€${Math.abs(chart.target - chart.balance).toFixed(0)}`],
           ].map(([k, v]) => (
-            <div key={k} className="p-1.5" style={{ backgroundColor: 'var(--app-surface-muted)', border: '1px solid var(--app-border)' }}>
-              <div className="text-[11px] text-[var(--app-text-muted)]">{k}</div>
+            <div key={k} className="p-2" style={{ backgroundColor: 'var(--app-surface-muted)', border: '1px solid var(--app-border)' }}>
+              <div className="text-xs text-[var(--app-text-muted)]">{k}</div>
               <div className="font-num text-sm font-bold">{v}</div>
             </div>
           ))}
@@ -412,11 +417,11 @@ export function FinanceChart({
   const minY = 0;
 
   const W = 320;
-  const H = 140;
+  const H = 120;
   const padL = 8;
   const padR = 8;
-  const padT = 10;
-  const padB = 14;
+  const padT = 18;
+  const padB = 18;
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
 
@@ -434,13 +439,12 @@ export function FinanceChart({
       .join(' ');
 
   return (
-    <div className="pixel-card p-2.5" data-testid="chart-what-if">
-      <div className="flex flex-wrap items-start justify-between gap-2 mb-1.5">
+    <div className="pixel-card p-3" data-testid="chart-what-if">
+      <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
         <div>
           <h3 className="text-sm font-semibold">{sourceLabel}</h3>
           <p className="text-xs text-[var(--app-text-muted)]">
-            Historical market replay of €{result.monthlyAmount.toFixed(2)}/mo ·{' '}
-            {result.months} mos
+            Replayed on real past prices
           </p>
         </div>
       </div>
@@ -449,7 +453,7 @@ export function FinanceChart({
       {(onChangeWhatIfAsset || onChangeWhatIfMonths) && (
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
           {onChangeWhatIfAsset && (
-            <div className="flex gap-1.5" role="group" aria-label="Simulation asset">
+            <div className="flex gap-2" role="group" aria-label="Simulation asset">
               {(
                 [
                   { id: 'index_fund', label: 'Index Fund' },
@@ -461,7 +465,7 @@ export function FinanceChart({
                   key={opt.id}
                   type="button"
                   onClick={() => onChangeWhatIfAsset(opt.id)}
-                  className="px-2.5 py-1.5 text-xs font-semibold pixel-btn cursor-pointer whitespace-nowrap"
+                  className="min-h-[44px] px-3 text-xs font-semibold pixel-btn cursor-pointer whitespace-nowrap"
                   style={{
                     backgroundColor:
                       result.asset === opt.id
@@ -486,7 +490,7 @@ export function FinanceChart({
                   key={m}
                   type="button"
                   onClick={() => onChangeWhatIfMonths(m)}
-                  className="px-2 py-1 text-xs font-num pixel-btn cursor-pointer"
+                  className="min-h-[44px] min-w-[44px] px-2 text-xs font-num pixel-btn cursor-pointer"
                   style={{
                     backgroundColor:
                       result.months === m
@@ -508,13 +512,27 @@ export function FinanceChart({
 
       {/* Clean SVG Curves */}
       <div
-        className="p-1.5 mb-2"
+        className="p-2 mb-2"
         style={{
           backgroundColor: 'var(--app-surface-muted)',
           border: '1px solid var(--app-border)',
         }}
       >
-        <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-20 overflow-visible">
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          className="w-full h-auto overflow-visible"
+          role="img"
+          aria-label={`After ${result.months} months: €${result.finalAssetValue.toFixed(0)} invested, €${result.finalSavingsValue.toFixed(0)} in savings, €${result.totalCash.toFixed(0)} as cash.`}
+        >
+          <text x={padL} y={11} fontSize="11" fill="var(--app-text-muted)" className="font-num">
+            €{Math.round(maxY).toLocaleString('en-IE')}
+          </text>
+          <text x={padL} y={H - 4} fontSize="11" fill="var(--app-text-muted)" className="font-num">
+            Now
+          </text>
+          <text x={W - padR} y={H - 4} fontSize="11" fill="var(--app-text-muted)" textAnchor="end" className="font-num">
+            +{result.months} mo
+          </text>
           {/* Grid lines */}
           {[0.25, 0.5, 0.75, 1].map((frac) => {
             const y = padT + plotH * (1 - frac);
@@ -558,20 +576,31 @@ export function FinanceChart({
         </svg>
       </div>
 
-      {/* Numeric Readout */}
+      {/* Numeric readout, doubling as the legend */}
       <div className="grid grid-cols-3 gap-2 text-xs mb-2">
         <div>
-          <div className="text-[11px] text-[var(--app-text-muted)]">Cash Saved</div>
+          <div className="flex items-center gap-1 text-xs text-[var(--app-text-muted)]">
+            <i className="inline-block w-3 border-t-2 border-dashed" style={{ borderColor: 'var(--app-text-muted)' }} aria-hidden="true" />
+            Cash Saved
+          </div>
           <div className="font-num font-bold">€{result.totalCash.toFixed(2)}</div>
         </div>
         <div>
-          <div className="text-[11px] text-[var(--app-text-muted)]">S-Savings</div>
+          <div className="flex items-center gap-1 text-xs text-[var(--app-text-muted)]">
+            <i className="inline-block w-3 h-0.5" style={{ backgroundColor: '#2563eb' }} aria-hidden="true" />
+            S-Savings
+          </div>
           <div className="font-num font-bold text-blue-600">
             €{result.finalSavingsValue.toFixed(2)}
           </div>
         </div>
         <div>
-          <div className="text-[11px] text-[var(--app-text-muted)]">
+          <div className="flex items-center gap-1 text-xs text-[var(--app-text-muted)]">
+            <i
+              className="inline-block w-3 h-1"
+              style={{ backgroundColor: result.asset === 'nokia' ? 'var(--app-warning)' : 'var(--app-accent)' }}
+              aria-hidden="true"
+            />
             {result.asset === 'index_fund'
               ? 'Index Fund'
               : result.asset === 'nokia'
@@ -597,7 +626,7 @@ export function FinanceChart({
           type="button"
           disabled={pledgedActive}
           onClick={() => onPledgeCutback(sourceLabel, result.monthlyAmount)}
-          className="w-full py-2 px-4 text-xs font-semibold pixel-btn cursor-pointer disabled:opacity-60"
+          className="w-full min-h-[44px] px-4 text-xs font-semibold pixel-btn cursor-pointer disabled:opacity-60"
           style={{
             backgroundColor: pledgedActive
               ? 'var(--app-surface-muted)'

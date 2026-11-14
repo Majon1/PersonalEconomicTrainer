@@ -45,7 +45,7 @@ function NumberField(props: { id: string; label: string; hint?: string; value: s
   return (
     <label htmlFor={props.id} className="block">
       <span className="text-xs font-semibold">{props.label}</span>
-      {props.hint && <span className="block text-[11px] text-[var(--app-text-muted)]">{props.hint}</span>}
+      {props.hint && <span className="block text-xs text-[var(--app-text-muted)]">{props.hint}</span>}
       <div className="mt-1 flex items-center border-2 border-[var(--app-border)] bg-[var(--app-bg)] focus-within:border-[var(--app-accent)]">
         <span className="pl-2 font-num text-sm text-[var(--app-text-muted)]">€</span>
         <input
@@ -56,11 +56,11 @@ function NumberField(props: { id: string; label: string; hint?: string; value: s
           step={5}
           value={props.value}
           onChange={(e) => props.onChange(e.target.value)}
-          className="w-full min-h-[40px] px-2 font-num text-base bg-transparent focus:outline-none"
+          className="w-full min-h-[44px] px-2 font-num text-base bg-transparent focus:outline-none"
           placeholder="0"
         />
         {props.perMonth !== false && (
-          <span className="pr-2 text-[11px] text-[var(--app-text-muted)] whitespace-nowrap">/ month</span>
+          <span className="pr-2 text-xs text-[var(--app-text-muted)] whitespace-nowrap">/ month</span>
         )}
       </div>
     </label>
@@ -99,7 +99,7 @@ export function BudgetView({ budget, history, suggestion, status, onSave, onChec
       data-testid="budget-view"
     >
       <div
-        className="h-12 px-3.5 flex items-center justify-between border-b-2 shrink-0"
+        className="h-12 px-4 flex items-center justify-between border-b-2 shrink-0"
         style={{ backgroundColor: 'var(--app-surface)', borderColor: 'var(--app-border)', marginTop: 'env(safe-area-inset-top)' }}
       >
         <span className="font-num font-bold text-xs tracking-wider">MY BUDGET</span>
@@ -107,20 +107,19 @@ export function BudgetView({ budget, history, suggestion, status, onSave, onChec
           type="button"
           onClick={onClose}
           aria-label="Close budget"
-          className="w-8 h-8 flex items-center justify-center border border-[var(--app-border)] cursor-pointer"
-          style={{ backgroundColor: 'var(--app-surface-muted)' }}
+          className="touch-x"
         >
           <X className="w-4 h-4" />
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3.5 space-y-3" style={{ paddingBottom: 'calc(0.875rem + env(safe-area-inset-bottom))' }}>
+      <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))' }}>
         {/* This month */}
         {status && status.lines.length > 0 && (
           <section className="pixel-card p-3 space-y-2" aria-label="This month">
             <div className="flex items-baseline justify-between">
               <h3 className="text-sm font-semibold">This month</h3>
-              <span className="text-[11px] text-[var(--app-text-muted)]">{status.daysLeft} days left</span>
+              <span className="text-xs text-[var(--app-text-muted)]">{status.daysLeft} days left</span>
             </div>
             {status.lines.map((l) => (
               <div key={l.key}>
@@ -133,7 +132,7 @@ export function BudgetView({ budget, history, suggestion, status, onSave, onChec
                     </span>
                   </span>
                 </div>
-                <div className="h-2 mt-0.5" style={{ backgroundColor: 'var(--app-surface-muted)', border: '1px solid var(--app-border)' }}>
+                <div className="h-2 mt-1" style={{ backgroundColor: 'var(--app-surface-muted)', border: '1px solid var(--app-border)' }}>
                   <div className="h-full" style={{ width: `${Math.min(100, l.pct)}%`, backgroundColor: STATUS_COLOR[l.status] }} />
                 </div>
               </div>
@@ -144,7 +143,7 @@ export function BudgetView({ budget, history, suggestion, status, onSave, onChec
         {/* Before you buy */}
         <section className="pixel-card p-3 space-y-2" aria-label="Before you buy">
           <h3 className="text-sm font-semibold">Thinking of buying something?</h3>
-          <p className="text-[11px] text-[var(--app-text-muted)]">
+          <p className="text-xs text-[var(--app-text-muted)]">
             Mikko checks it against your budget, the money you need for bills until payday, and your emergency fund.
           </p>
           <form
@@ -162,7 +161,7 @@ export function BudgetView({ budget, history, suggestion, status, onSave, onChec
                   id="buy-kind"
                   value={kind}
                   onChange={(e) => setKind(e.target.value)}
-                  className="mt-1 w-full min-h-[44px] px-2 text-sm border-2 border-[var(--app-border)] bg-[var(--app-bg)]"
+                  className="mt-1 w-full min-h-[44px] px-2 text-base border-2 border-[var(--app-border)] bg-[var(--app-bg)]"
                 >
                   {PURCHASE_KINDS.map((k) => (
                     <option key={k.category} value={k.category}>{k.label}</option>
@@ -178,13 +177,13 @@ export function BudgetView({ budget, history, suggestion, status, onSave, onChec
                 value={what}
                 onChange={(e) => setWhat(e.target.value)}
                 placeholder="e.g. new sneakers"
-                className="mt-1 w-full min-h-[40px] px-2 text-base border-2 border-[var(--app-border)] bg-[var(--app-bg)] focus:outline-none focus:border-[var(--app-accent)]"
+                className="mt-1 w-full min-h-[44px] px-2 text-base border-2 border-[var(--app-border)] bg-[var(--app-bg)] focus:outline-none focus:border-[var(--app-accent)]"
               />
             </label>
             <button
               type="submit"
               disabled={num(amount) <= 0}
-              className="w-full min-h-[42px] text-sm font-semibold pixel-btn cursor-pointer disabled:opacity-50"
+              className="w-full min-h-[44px] text-sm font-semibold pixel-btn cursor-pointer disabled:opacity-50"
               style={{ backgroundColor: 'var(--app-accent)', color: 'var(--app-accent-fg)' }}
             >
               Ask Mikko: can I afford it?
@@ -196,7 +195,7 @@ export function BudgetView({ budget, history, suggestion, status, onSave, onChec
         <section className="pixel-card p-3 space-y-3" aria-label="Monthly limits">
           <div>
             <h3 className="text-sm font-semibold">Monthly limits</h3>
-            <p className="text-[11px] text-[var(--app-text-muted)]">
+            <p className="text-xs text-[var(--app-text-muted)]">
               For the two baskets you choose. Mikko's suggestion: your last 3 months, minus 10% (slips €{suggestion.slips}, nice to have €{suggestion.nice_to_have}).
             </p>
           </div>
@@ -223,7 +222,7 @@ export function BudgetView({ budget, history, suggestion, status, onSave, onChec
             <button
               type="button"
               onClick={useSuggestion}
-              className="min-h-[42px] text-xs font-semibold pixel-btn cursor-pointer"
+              className="min-h-[44px] text-xs font-semibold pixel-btn cursor-pointer"
               style={{ backgroundColor: 'var(--app-surface-muted)', color: 'var(--app-text)' }}
             >
               Use Mikko's suggestion
@@ -231,14 +230,14 @@ export function BudgetView({ budget, history, suggestion, status, onSave, onChec
             <button
               type="button"
               onClick={save}
-              className="min-h-[42px] text-xs font-semibold pixel-btn cursor-pointer"
+              className="min-h-[44px] text-xs font-semibold pixel-btn cursor-pointer"
               style={{ backgroundColor: 'var(--app-accent)', color: 'var(--app-accent-fg)' }}
             >
               Save budget
             </button>
           </div>
           {budget && (
-            <button type="button" onClick={() => onSave(null)} className="text-[11px] underline text-[var(--app-text-muted)] cursor-pointer">
+            <button type="button" onClick={() => onSave(null)} className="text-xs underline text-[var(--app-text-muted)] cursor-pointer">
               Remove budget
             </button>
           )}
@@ -248,11 +247,11 @@ export function BudgetView({ budget, history, suggestion, status, onSave, onChec
           <section className="pixel-card p-3 space-y-2" aria-label="Your budgets" data-testid="budget-history">
             <div>
               <h3 className="text-sm font-semibold">Your budgets</h3>
-              <p className="text-[11px] text-[var(--app-text-muted)]">
+              <p className="text-xs text-[var(--app-text-muted)]">
                 Every budget you've made. Saving a new one ends the one before.
               </p>
             </div>
-            <ul className="space-y-1.5">
+            <ul className="space-y-2">
               {listed.map((b) => {
                 const active = !b.endedAt;
                 return (
@@ -265,29 +264,29 @@ export function BudgetView({ budget, history, suggestion, status, onSave, onChec
                     }}
                   >
                     <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 text-xs font-semibold">
+                      <div className="flex items-center gap-2 text-xs font-semibold">
                         {active ? (
                           <span
-                            className="px-1 text-[10px] font-bold"
+                            className="px-1 text-xs font-bold"
                             style={{ backgroundColor: 'var(--app-accent)', color: 'var(--app-accent-fg)' }}
                           >
                             Active
                           </span>
                         ) : (
-                          <span className="text-[10px] font-semibold text-[var(--app-text-muted)]">Ended</span>
+                          <span className="text-xs font-semibold text-[var(--app-text-muted)]">Ended</span>
                         )}
                         <span className="font-num">
                           {day(b.createdAt)}
                           {b.endedAt ? ` – ${day(b.endedAt)}` : ' – now'}
                         </span>
                       </div>
-                      <div className="text-[11px] mt-0.5">{limitsText(b.budget)}</div>
+                      <div className="text-xs mt-1">{limitsText(b.budget)}</div>
                     </div>
                     {!active && (
                       <button
                         type="button"
                         onClick={() => onSave(b.budget)}
-                        className="min-h-[32px] px-2 text-[11px] font-semibold pixel-btn cursor-pointer shrink-0"
+                        className="min-h-[44px] px-2 text-xs font-semibold pixel-btn cursor-pointer shrink-0"
                         style={{ backgroundColor: 'var(--app-surface)', color: 'var(--app-text)' }}
                       >
                         Use again

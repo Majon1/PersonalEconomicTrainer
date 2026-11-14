@@ -8,6 +8,9 @@ interface FinlandWallProps {
   picked?: string;
   onPick: (category: string) => void;
   onSeasons: () => void;
+  /** opens or closes the full table under Mikko */
+  onShowAll: () => void;
+  tableOpen: boolean;
   onClose: () => void;
 }
 
@@ -23,13 +26,20 @@ const TONE = {
   similar: { color: 'var(--app-text-muted)', arrow: '≈' },
 } as const;
 
+/** Tiles per side of Mikko; the rest are in the full table. */
+const PER_SIDE = 4;
+
 /**
- * "You vs Finland" pinned to the wall of Mikko's room: one tile per category
- * on either side of him. Tap a tile for the details.
+ * "You vs Finland" pinned to the wall of Mikko's room: the biggest gaps on
+ * either side of him. Tap a tile for the details.
  */
-export function FinlandWall({ board, picked, onPick, onSeasons, onClose }: FinlandWallProps) {
-  const half = Math.ceil(board.rows.length / 2);
-  const columns = [board.rows.slice(0, half), board.rows.slice(half)];
+export function FinlandWall({ board, picked, onPick, onSeasons, onShowAll, tableOpen, onClose }: FinlandWallProps) {
+  const notable = [...board.rows]
+    .sort((a, b) => Math.abs(pctVsFinland(b)) - Math.abs(pctVsFinland(a)))
+    .slice(0, PER_SIDE * 2);
+  const half = Math.ceil(notable.length / 2);
+  const columns = [notable.slice(0, half), notable.slice(half)];
+  const hidden = board.rows.length - notable.length;
 
   const tile = (row: Board['rows'][number]) => {
     const pct = pctVsFinland(row);
@@ -42,7 +52,7 @@ export function FinlandWall({ board, picked, onPick, onSeasons, onClose }: Finla
         onClick={() => onPick(row.category)}
         aria-pressed={isPicked}
         aria-label={`${row.category}: ${pct > 0 ? '+' : ''}${pct}% vs Finland. You €${row.yours.toFixed(0)}, Finland €${row.finland.toFixed(0)}. Tap for details.`}
-        className="w-full min-h-[22px] px-1 py-0.5 flex items-center justify-between gap-1 text-left cursor-pointer pixel-btn"
+        className="w-full min-h-[36px] px-2 flex items-center justify-between gap-1 text-left cursor-pointer pixel-btn"
         style={{
           backgroundColor: 'var(--app-surface)',
           borderColor: isPicked ? tone.color : 'var(--app-border)',
@@ -50,8 +60,8 @@ export function FinlandWall({ board, picked, onPick, onSeasons, onClose }: Finla
           outlineOffset: '-2px',
         }}
       >
-        <span className="text-[9.5px] font-semibold truncate min-w-0">{row.category}</span>
-        <span className="font-num text-[9.5px] font-bold shrink-0" style={{ color: tone.color }}>
+        <span className="text-xs font-semibold truncate min-w-0">{row.category}</span>
+        <span className="font-num text-xs font-bold shrink-0" style={{ color: tone.color }}>
           {tone.arrow}
           {pct > 0 ? '+' : pct < 0 ? '−' : ''}
           {Math.abs(pct)}%
@@ -64,18 +74,26 @@ export function FinlandWall({ board, picked, onPick, onSeasons, onClose }: Finla
     <div className="absolute inset-0 z-10 pointer-events-none" data-testid="finland-wall">
       {/* Title strip at the top of the wall */}
       <div
-        className="absolute top-1.5 left-1/2 -translate-x-1/2 pointer-events-auto flex items-center gap-1.5 pl-2 pr-1 py-0.5 border-2"
+        className="absolute top-2 left-2 right-2 pointer-events-auto flex items-center gap-2 pl-2 border-2"
         style={{ backgroundColor: 'var(--app-surface)', borderColor: 'var(--app-border)', boxShadow: 'var(--pixel-shadow)' }}
       >
-        <span className="font-num text-[10px] font-bold uppercase whitespace-nowrap">
-          You vs Finland · {board.ageGroup}
+        <span className="flex-1 min-w-0 font-num text-xs font-bold uppercase truncate">
+          vs Finland · {board.ageGroup}
         </span>
+        <button
+          type="button"
+          onClick={onShowAll}
+          aria-expanded={tableOpen}
+          data-testid="show-all-categories"
+          className="min-h-[44px] px-2 text-xs font-semibold cursor-pointer underline shrink-0"
+        >
+          {tableOpen ? 'Hide table' : hidden > 0 ? `All ${board.rows.length}` : 'Table'}
+        </button>
         <button
           type="button"
           onClick={onSeasons}
           data-testid="show-seasons"
-          className="px-1.5 h-5 text-[10px] font-semibold cursor-pointer underline"
-          style={{ backgroundColor: 'var(--app-surface-muted)' }}
+          className="min-h-[44px] px-2 text-xs font-semibold cursor-pointer underline shrink-0"
         >
           Seasons
         </button>
@@ -83,19 +101,18 @@ export function FinlandWall({ board, picked, onPick, onSeasons, onClose }: Finla
           type="button"
           onClick={onClose}
           aria-label="Hide the comparison"
-          className="w-5 h-5 grid place-items-center cursor-pointer"
-          style={{ backgroundColor: 'var(--app-surface-muted)' }}
+          className="touch-x !border-0 !border-l-2"
         >
-          <X className="w-3 h-3" />
+          <X className="w-4 h-4" />
         </button>
       </div>
 
       {/* Two columns of tiles, either side of Mikko, above the desk */}
-      {columns.map((rows, i) => (
+      {!tableOpen && columns.map((rows, i) => (
         <div
           key={i}
-          className={`absolute top-8 bottom-[17%] w-[29%] max-w-[130px] flex flex-col justify-center gap-0.5 overflow-y-auto pointer-events-auto ${
-            i === 0 ? 'left-1.5' : 'right-1.5'
+          className={`absolute top-16 bottom-[17%] w-[30%] max-w-[136px] flex flex-col justify-center gap-1 pointer-events-auto short:hidden ${
+            i === 0 ? 'left-2' : 'right-2'
           }`}
         >
           {rows.map(tile)}

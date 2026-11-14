@@ -70,7 +70,7 @@ export function PixelCardPreview({
     <div
       data-testid="pixel-card-preview"
       data-skin={skinId}
-      className={`relative overflow-hidden select-none transition-transform duration-150 hover:-translate-y-0.5 ${
+      className={`relative overflow-hidden select-none transition-transform duration-150 ${
         compact ? 'w-full max-w-[260px]' : 'w-full max-w-[320px]'
       }`}
       style={{
@@ -133,7 +133,7 @@ export function PixelCardPreview({
       </svg>
 
       {/* Crisp overlay typography */}
-      <div className="absolute inset-0 p-3.5 flex flex-col justify-between pointer-events-none">
+      <div className="absolute inset-0 p-4 flex flex-col justify-between pointer-events-none">
         <div className="flex items-start justify-between pl-11">
           <span className="font-pixel text-xs tracking-tight leading-none">
             S-PANKKI
@@ -148,10 +148,10 @@ export function PixelCardPreview({
 
         <div className="flex items-end justify-between">
           <div>
-            <div className="text-[11px] opacity-85 leading-tight">
+            <div className="text-xs opacity-85 leading-tight">
               {skin.label}
             </div>
-            <div className="font-num text-xs font-semibold tracking-wider mt-0.5">
+            <div className="font-num text-xs font-semibold tracking-wider mt-1">
               {holderName.toUpperCase()} · •••• 4821
             </div>
           </div>

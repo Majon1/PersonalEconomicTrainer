@@ -48,7 +48,7 @@ function MonthPicker({ value, options, onChange }: { value: string; options: str
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="min-h-[36px] px-2 text-sm border-2 border-[var(--app-border)] bg-[var(--app-bg)]"
+        className="min-h-[44px] px-2 text-sm border-2 border-[var(--app-border)] bg-[var(--app-bg)]"
       >
         {[...options].reverse().map((m) => (
           <option key={m} value={m}>{monthName(m)}</option>
@@ -61,9 +61,9 @@ function MonthPicker({ value, options, onChange }: { value: string; options: str
 function Stat({ label, value, note }: { label: string; value: string; note?: string }) {
   return (
     <div className="p-2" style={{ backgroundColor: 'var(--app-surface-muted)', border: '1px solid var(--app-border)' }}>
-      <div className="text-[11px] text-[var(--app-text-muted)]">{label}</div>
-      <div className="font-num text-sm font-bold">{value}</div>
-      {note && <div className="text-[10px] text-[var(--app-text-muted)] leading-tight mt-0.5">{note}</div>}
+      <div className="text-xs text-[var(--app-text-muted)]">{label}</div>
+      <div className="font-num text-base font-bold">{value}</div>
+      {note && <div className="text-xs text-[var(--app-text-muted)] leading-tight mt-1">{note}</div>}
     </div>
   );
 }
@@ -105,7 +105,7 @@ export function SpendingPage({ transactions, overrides }: { transactions: Transa
       <div className="border-2" style={{ borderColor: 'var(--app-border)' }}>
         <BasketsMeter baskets={monthBaskets} monthKey={month} />
       </div>
-      <ul className="space-y-1.5">
+      <ul className="space-y-2">
         {rows.map((r) => {
           const main = (Object.entries(r.baskets).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'slips') as BasketKey;
           const isOpen = open === r.category;
@@ -115,10 +115,10 @@ export function SpendingPage({ transactions, overrides }: { transactions: Transa
                 type="button"
                 onClick={() => setOpen(isOpen ? null : r.category)}
                 aria-expanded={isOpen}
-                className="w-full p-2.5 text-left cursor-pointer"
+                className="w-full min-h-[44px] p-3 text-left cursor-pointer"
               >
                 <div className="flex items-center justify-between gap-2 text-sm">
-                  <span className="flex items-center gap-1.5 min-w-0">
+                  <span className="flex items-center gap-2 min-w-0">
                     <span className="w-2.5 h-2.5 shrink-0" style={{ backgroundColor: BASKET_COLOR[main] }} aria-hidden="true" />
                     <span className="font-semibold truncate">{r.category}</span>
                   </span>
@@ -131,20 +131,20 @@ export function SpendingPage({ transactions, overrides }: { transactions: Transa
                   <div className="flex-1 h-1.5" style={{ backgroundColor: 'var(--app-surface-muted)' }}>
                     <div className="h-full" style={{ width: `${(r.total / max) * 100}%`, backgroundColor: BASKET_COLOR[main] }} />
                   </div>
-                  <span className="text-[11px] text-[var(--app-text-muted)] shrink-0">
+                  <span className="text-xs text-[var(--app-text-muted)] shrink-0">
                     {r.txs.length} purchase{r.txs.length === 1 ? '' : 's'} · {Math.round((r.total / (total || 1)) * 100)}%
                   </span>
                 </div>
               </button>
               {isOpen && (
-                <ul className="border-t px-2.5 pb-2" style={{ borderColor: 'var(--app-border)' }}>
+                <ul className="border-t px-3 pb-2" style={{ borderColor: 'var(--app-border)' }}>
                   {[...r.txs].reverse().map((t) => {
                     const b = resolveTxBasket(t, overrides).basket;
                     return (
                       <li key={t.id} className="flex items-center justify-between gap-2 py-1 text-xs border-b last:border-b-0" style={{ borderColor: 'var(--app-border)' }}>
                         <span className="font-num text-[var(--app-text-muted)] w-12 shrink-0">{dayName(t.date)}</span>
                         <span className="flex-1 min-w-0 truncate">{t.merchantType || t.category}</span>
-                        <span className="text-[10px] px-1 shrink-0" style={{ color: BASKET_COLOR[b], border: `1px solid ${BASKET_COLOR[b]}` }}>
+                        <span className="text-xs px-1 shrink-0" style={{ color: BASKET_COLOR[b], border: `1px solid ${BASKET_COLOR[b]}` }}>
                           {BASKET_LABEL[b]}
                         </span>
                         <span className="font-num font-semibold w-16 text-right shrink-0">{eur(Math.abs(t.amount), 2)}</span>
@@ -156,7 +156,7 @@ export function SpendingPage({ transactions, overrides }: { transactions: Transa
             </li>
           );
         })}
-        {!rows.length && <li className="text-sm text-[var(--app-text-muted)]">No spending this month.</li>}
+        {!rows.length && <li className="text-sm text-[var(--app-text-muted)]">No spending this month. Pick another month above.</li>}
       </ul>
     </div>
   );
@@ -198,7 +198,7 @@ export function MoneyInPage({ transactions }: { transactions: Transaction[] }) {
     <div className="p-3 space-y-3" data-testid="page-money-in">
       <PageHeader title="Money in & set aside" subtitle="Salary and other income, and money you moved to investments or savings." />
       <MonthPicker value={month} options={all} onChange={setMonth} />
-      <div className="grid grid-cols-2 gap-1.5">
+      <div className="grid grid-cols-2 gap-2">
         {FLOW.map((f) => (
           <Stat key={f.key} label={f.label} value={eur(now[f.key])} note={`12-month avg ${eur(avg(f.key))}`} />
         ))}
@@ -206,17 +206,28 @@ export function MoneyInPage({ transactions }: { transactions: Transaction[] }) {
       </div>
 
       <section className="pixel-card p-3">
-        <h3 className="text-xs font-semibold mb-2">Income per month (salary + other)</h3>
-        <div className="flex items-end gap-1 h-20" role="img" aria-label="Income for the last 12 months">
+        <div className="flex items-baseline justify-between gap-2 mb-2">
+          <h3 className="text-xs font-semibold">Income per month (salary + other)</h3>
+          <span className="font-num text-xs font-semibold shrink-0" data-testid="income-picked">
+            {monthName(month, 'short')}: {eur(incomeSeries.find((s) => s.m === month)?.v ?? 0)}
+          </span>
+        </div>
+        <div className="flex items-end gap-1 h-20" role="group" aria-label="Income for the last 12 months. Tap a month to see it.">
           {incomeSeries.map((s) => (
-            <div key={s.m} className="flex-1 flex flex-col items-center gap-0.5 h-full justify-end">
-              <div
-                className="w-full"
-                title={`${monthName(s.m, 'short')}: ${eur(s.v)}`}
+            <button
+              key={s.m}
+              type="button"
+              onClick={() => setMonth(s.m)}
+              aria-label={`${monthName(s.m)}: ${eur(s.v)}`}
+              aria-pressed={s.m === month}
+              className="flex-1 flex flex-col items-center gap-1 h-full justify-end cursor-pointer"
+            >
+              <span
+                className="block w-full"
                 style={{ height: `${(s.v / maxIncome) * 100}%`, backgroundColor: s.m === month ? 'var(--app-accent)' : 'var(--app-text-muted)', opacity: s.m === month ? 1 : 0.5 }}
               />
-              <span className="font-num text-[9px] text-[var(--app-text-muted)]">{monthName(s.m, 'short').slice(0, 1)}</span>
-            </div>
+              <span className="font-num text-[11px] text-[var(--app-text-muted)]">{monthName(s.m, 'short').slice(0, 1)}</span>
+            </button>
           ))}
         </div>
       </section>
@@ -236,7 +247,7 @@ export function MoneyInPage({ transactions }: { transactions: Transaction[] }) {
               </li>
             );
           })}
-          {!rows.length && <li className="text-xs text-[var(--app-text-muted)]">Nothing this month.</li>}
+          {!rows.length && <li className="text-xs text-[var(--app-text-muted)]">Nothing came in or moved to savings this month.</li>}
         </ul>
       </section>
     </div>
@@ -318,13 +329,13 @@ export function HomePage({ customerId, transactions }: { customerId: string; tra
         <>
           <section className="pixel-card p-3 space-y-2">
             <div
-              className="px-2 py-1.5 text-sm font-bold flex items-center justify-between"
+              className="px-2 py-2 text-sm font-bold flex items-center justify-between"
               style={{ backgroundColor: a.decision === 'approved' ? '#15803d' : '#b91c1c', color: '#fff' }}
             >
               <span>{a.decision === 'approved' ? '✓ Approved' : '✕ Rejected'}</span>
               {a.rejectionReason && <span className="text-xs font-semibold">{pretty(a.rejectionReason)}</span>}
             </div>
-            <div className="grid grid-cols-2 gap-1.5">
+            <div className="grid grid-cols-2 gap-2">
               <Stat label="Property price" value={eur(a.propertyPrice)} />
               <Stat label="Loan" value={eur(a.loan)} />
               <Stat label="Own savings put in" value={eur(a.equity)} note={`${Math.round((a.equity / a.propertyPrice) * 100)}% of the price`} />
@@ -336,7 +347,7 @@ export function HomePage({ customerId, transactions }: { customerId: string; tra
               />
               <Stat label="Loan-to-value" value={`${Math.round(a.loanToValue * 100)}%`} note="Loan as a share of the collateral value" />
             </div>
-            <p className="text-[11px] text-[var(--app-text-muted)]">
+            <p className="text-xs text-[var(--app-text-muted)]">
               {a.startedOn && a.decidedOn ? `Applied ${dayName(a.startedOn)} → decided ${dayName(a.decidedOn)} 2026. ` : ''}
               {a.propertiesViewed} home{a.propertiesViewed === 1 ? '' : 's'} considered
               {a.propertyTypes.length ? ` (${a.propertyTypes.map(pretty).join(', ').toLowerCase()})` : ''}, {a.contacts} contacts with the bank, {a.steps} steps in all.
@@ -356,7 +367,7 @@ export function HomePage({ customerId, transactions }: { customerId: string; tra
               {!a.expenses.length && <li className="text-xs text-[var(--app-text-muted)]">None recorded.</li>}
             </ul>
             {a.expenses.length > 0 && (
-              <div className="flex justify-between text-xs font-bold pt-1.5 mt-1 border-t" style={{ borderColor: 'var(--app-border)' }}>
+              <div className="flex justify-between text-xs font-bold pt-2 mt-1 border-t" style={{ borderColor: 'var(--app-border)' }}>
                 <span>Total extra</span>
                 <span className="font-num">{eur(a.expenses.reduce((x, e) => x + e.amount, 0))}</span>
               </div>
@@ -368,7 +379,7 @@ export function HomePage({ customerId, transactions }: { customerId: string; tra
           <p className="text-xs">
             You haven't applied for a home loan. Here's how you compare with what applicants in this bank typically had:
           </p>
-          <div className="grid grid-cols-2 gap-1.5">
+          <div className="grid grid-cols-2 gap-2">
             <Stat label="Your monthly income" value={eur(avgIncome)} note={`Typical required: ${eur(s.medianRequiredIncome)}`} />
             <Stat label="On your account" value={eur(balance)} note={`Typical own savings put in: ${eur(s.medianEquity)}`} />
           </div>
@@ -377,17 +388,17 @@ export function HomePage({ customerId, transactions }: { customerId: string; tra
 
       <section className="pixel-card p-3 space-y-2">
         <h3 className="text-xs font-semibold">How the bank's {s.applications} home loan applications went</h3>
-        <div className="grid grid-cols-2 gap-1.5">
+        <div className="grid grid-cols-2 gap-2">
           <Stat label="Approved" value={`${approvalPct}%`} note={`${s.approved} of ${s.applications}`} />
           <Stat label="Typical price" value={eur(s.medianPrice)} />
           <Stat label="Typical loan" value={eur(s.medianLoan)} />
           <Stat label="Typical own savings" value={eur(s.medianEquity)} />
         </div>
         <div>
-          <h4 className="text-[11px] font-semibold mt-1">Why applications were rejected</h4>
+          <h4 className="text-xs font-semibold mt-1">Why applications were rejected</h4>
           <ul className="text-xs">
             {s.rejectionReasons.map((r) => (
-              <li key={r.reason} className="flex justify-between py-0.5">
+              <li key={r.reason} className="flex justify-between py-1">
                 <span>{pretty(r.reason)}</span>
                 <span className="font-num">{r.n}</span>
               </li>
@@ -395,10 +406,10 @@ export function HomePage({ customerId, transactions }: { customerId: string; tra
           </ul>
         </div>
         <div>
-          <h4 className="text-[11px] font-semibold mt-1">Typical extra costs (average when they came up)</h4>
+          <h4 className="text-xs font-semibold mt-1">Typical extra costs (average when they came up)</h4>
           <ul className="text-xs">
             {s.typicalCosts.map((c) => (
-              <li key={c.type} className="flex justify-between py-0.5">
+              <li key={c.type} className="flex justify-between py-1">
                 <span>{pretty(c.type)}</span>
                 <span className="font-num">{eur(c.average)}</span>
               </li>
@@ -441,7 +452,7 @@ export function BottomNav({ page, onChange }: { page: PageKey; onChange: (p: Pag
             type="button"
             onClick={() => onChange(key)}
             aria-current={on ? 'page' : undefined}
-            className="min-h-[48px] flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold cursor-pointer"
+            className="min-h-[48px] flex flex-col items-center justify-center gap-1 text-xs font-semibold cursor-pointer"
             style={{ color: on ? 'var(--app-accent)' : 'var(--app-text-muted)' }}
           >
             <Icon className="w-5 h-5" aria-hidden="true" />

@@ -81,6 +81,8 @@ interface ChatTurn {
 }
 
 const CHAT_KEEP = 12;
+/** Mikko's room: one fixed height from the top, so he is always drawn at the same size. */
+const SCENE_BOX = 'absolute inset-x-0 top-0 h-[296px] short:h-[140px]';
 /** Mikko keeps looking for at least this long, even when the answer is already back. */
 const PONDER_MS = 2000;
 
@@ -101,6 +103,8 @@ interface ActiveTurn {
   offerCompare?: boolean;
   /** category tapped on the You vs Finland wall */
   pick?: string;
+  /** the request failed; this sends it again */
+  retry?: () => void;
 }
 
 const COMPARE_OFFER =
@@ -246,7 +250,12 @@ function saveServerProgress(customerId: string, progress: PlayerProgress, at: st
   }).catch(() => {});
 }
 
-const QUICK_CHIPS = [
+interface QuickChip {
+  label: string;
+  query: string;
+}
+
+const QUICK_CHIPS: QuickChip[] = [
   { label: 'How am I doing?', query: 'How am I doing this month? Why are you in that mood?' },
   { label: 'Safe this week?', query: 'What is safe for me to spend this week?' },
   { label: 'Can I buy it?', query: '' },
@@ -268,6 +277,7 @@ export default function App() {
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [ledgerReady, setLedgerReady] = useState(false);
   const [asking, setAsking] = useState(false);
   const [userState, setUserState] = useState<SavedUserState | null>(null);
@@ -282,6 +292,11 @@ export default function App() {
   const [levelUpToast, setLevelUpToast] = useState<string | null>(null);
   const [lockerFeedback, setLockerFeedback] = useState<string | null>(null);
   const [customTurn, setCustomTurn] = useState<ActiveTurn | null>(null);
+  const [speechOpen, setSpeechOpen] = useState(true);
+  /** the full You vs Finland table under Mikko, next to the wall tiles */
+  const [boardTable, setBoardTable] = useState(false);
+  const [reward, setReward] = useState<{ id: number; text: string } | null>(null);
+  const rewardTimer = useRef<number | undefined>(undefined);
 
   const progress = userState?.progress;
   // The progress object last stored on the server; `ready` once the server copy is in.
@@ -323,12 +338,12 @@ export default function App() {
         setCustomerId(initial);
       })
       .catch(() => {
-        if (!cancel) setLoadError('Could not load customers from Postgres.');
+        if (!cancel) setLoadError('Could not load your account.');
       });
     return () => {
       cancel = true;
     };
-  }, []);
+  }, [reloadKey]);
 
   useEffect(() => {
     if (!customerId) return;
@@ -337,7 +352,9 @@ export default function App() {
     const local = loadState(customerId);
     setUserState(local);
     setCustomTurn(null);
+    setSpeechOpen(true);
     setLevelUpToast(null);
+    setReward(null);
     setLockerFeedback(null);
     setOverviewOpen(false);
     setTopicsOpen(false);
@@ -400,12 +417,12 @@ export default function App() {
         setLedgerReady(true);
       })
       .catch(() => {
-        if (!cancel) setLoadError('Could not load this customer’s transactions.');
+        if (!cancel) setLoadError('Could not load your transactions.');
       });
     return () => {
       cancel = true;
     };
-  }, [customerId]);
+  }, [customerId, reloadKey]);
 
   useEffect(() => {
     const sync = progressSync.current;
@@ -515,6 +532,11 @@ export default function App() {
     }
   }, [ledgerReady, customerId, moneyMood, budgetStatus, seasonAhead]);
 
+  // A new line from Mikko opens the box again, even if it was closed.
+  useEffect(() => {
+    if (customTurn) setSpeechOpen(true);
+  }, [customTurn]);
+
   // The landing message sits in a fixed area. Scroll only when that message
   // (or a chart under it) is actually taller than the area.
   useEffect(() => {
@@ -534,22 +556,81 @@ export default function App() {
     observer.observe(area);
     observer.observe(dialogue);
     return () => observer.disconnect();
-  }, [page, customTurn, asking, ledgerReady]);
+  }, [page, customTurn, asking, ledgerReady, speechOpen]);
 
   if (loadError || !userState || !progress || !ledgerReady || !customerId) {
+    const bar = (w: string) => (
+      <span className="block h-3 animate-pulse" style={{ width: w, backgroundColor: 'var(--app-surface-muted)' }} />
+    );
     return (
       <div className="h-[100dvh] overflow-hidden w-full flex items-center justify-center framed:p-4">
         <div
           data-testid="phone-shell"
-          className="relative w-full max-w-[560px] framed:w-[398px] h-[100dvh] framed:h-[812px] framed:max-h-[94vh] flex items-center justify-center px-6 text-center framed:border-[3px]"
+          className="relative w-full max-w-[560px] framed:w-[398px] h-[100dvh] framed:h-[812px] framed:max-h-[94vh] flex flex-col overflow-hidden framed:border-[3px]"
           style={{
             backgroundColor: 'var(--app-bg)',
             borderColor: 'var(--app-border)',
           }}
+          aria-busy={!loadError}
         >
-          <p className="text-sm font-medium">
-            {loadError ?? 'Opening the ledger…'}
-          </p>
+          <div
+            className="min-h-11 px-3 flex items-center justify-between gap-2 border-b-2 shrink-0"
+            style={{ backgroundColor: 'var(--app-surface)', borderColor: 'var(--app-border)', paddingTop: 'env(safe-area-inset-top)' }}
+          >
+            <span className="font-num font-bold text-xs tracking-wider">S-MOBIILI</span>
+            {bar('96px')}
+          </div>
+          <div
+            className="px-3 py-2 min-h-[60px] flex flex-col justify-center gap-2 border-b-2 shrink-0"
+            style={{ backgroundColor: 'var(--app-surface)', borderColor: 'var(--app-border)' }}
+          >
+            {bar('128px')}
+            {bar('72px')}
+          </div>
+          <div className="relative flex-1 min-h-0" style={{ backgroundColor: '#6f451f' }}>
+          <div className={SCENE_BOX} aria-hidden="true">
+            <PixelMentorScene
+              mood={loadError ? 'deadpan' : 'pointing'}
+              styleId={progress?.equippedStyle ?? 'classic_visor'}
+              slipsSharePct={0}
+              streakWeeks={0}
+              thinking={!loadError}
+              variant="background"
+            />
+          </div>
+          <div className="absolute inset-x-0 bottom-0 z-20 px-3 py-2">
+            <div className="pixel-card p-3 space-y-2" role="status" data-testid="loading-state">
+              <div className="font-num font-bold text-xs tracking-wide">Mikko · Money Coach</div>
+              <p className="text-xs leading-relaxed font-medium">
+                {loadError
+                  ? `${loadError} My notes are out of reach for a moment.`
+                  : 'Opening your account… grabbing my notes.'}
+              </p>
+              {loadError && (
+                <button
+                  type="button"
+                  data-testid="retry-load"
+                  onClick={() => {
+                    setLoadError(null);
+                    setReloadKey((k) => k + 1);
+                  }}
+                  className="w-full min-h-[44px] px-3 text-xs font-semibold pixel-btn cursor-pointer"
+                  style={{ backgroundColor: 'var(--app-accent)', color: 'var(--app-accent-fg)' }}
+                >
+                  Try again
+                </button>
+              )}
+            </div>
+          </div>
+          </div>
+          <div
+            className="p-2 border-t-2 shrink-0 flex gap-2"
+            style={{ backgroundColor: 'var(--app-surface)', borderColor: 'var(--app-border)', paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom))' }}
+            aria-hidden="true"
+          >
+            <span className="block h-11 w-11 animate-pulse" style={{ backgroundColor: 'var(--app-surface-muted)' }} />
+            <span className="block h-11 flex-1 animate-pulse" style={{ backgroundColor: 'var(--app-surface-muted)' }} />
+          </div>
         </div>
       </div>
     );
@@ -579,6 +660,14 @@ export default function App() {
       ? activeQuest.prompt
       : `${moneyMood.headline} Ask me about taxis, safe-to-spend, or what-ifs.`;
 
+  const showReward = (xp: number, coins: number) => {
+    const parts = [xp > 0 ? `+${xp} XP` : '', coins > 0 ? `+${coins} coins` : ''].filter(Boolean);
+    if (!parts.length) return;
+    window.clearTimeout(rewardTimer.current);
+    setReward({ id: Date.now(), text: parts.join(' · ') });
+    rewardTimer.current = window.setTimeout(() => setReward(null), 1200);
+  };
+
   const handleSaveBudget = (next: Budget | null) => {
     const firstTime = budgets.length === 0 && next;
     const nextBudgets = saveBudgetVersion(budgets, next, new Date().toISOString(), newId());
@@ -590,6 +679,7 @@ export default function App() {
       return { ...prev, budgets: nextBudgets, progress: { ...prev.progress, xp, level: levelFromXp(xp) } };
     });
     setBudgetOpen(false);
+    if (firstTime) showReward(20, 0);
     setCustomTurn(
       next
         ? {
@@ -613,6 +703,7 @@ export default function App() {
     setTopicsOpen(false);
     setOverviewOpen(false);
     setAsking(true);
+    setBoardTable(false);
     setCustomTurn({ mood: 'deadpan', text: 'Pulling the Statistics Finland numbers…' });
     try {
       const [res] = await Promise.all([
@@ -638,8 +729,12 @@ export default function App() {
           `You're under them in ${board.lessCount} categor${board.lessCount === 1 ? 'y' : 'ies'}, best in ${bottom.category}. Tap a category on the wall for details.`,
         chart: board,
       });
-    } catch (error) {
-      setCustomTurn({ mood: 'deadpan', text: error instanceof Error ? error.message : 'Could not load the comparison.' });
+    } catch {
+      setCustomTurn({
+        mood: 'deadpan',
+        text: "Statistics Finland isn't answering me right now. Give it another go in a moment.",
+        retry: handleCompareYes,
+      });
     } finally {
       setAsking(false);
     }
@@ -770,9 +865,9 @@ export default function App() {
       setTimeout(() => setLastShiftedBasket(null), 1500);
     }
 
+    showReward(res.xpEarned, res.coinsEarned + (leveledUp ? 35 : 0));
     if (leveledUp) {
       setLevelUpToast(`Level ${nextLevel} unlocked (+35 Bonus Coins)`);
-    } else {
     }
 
     const isNetflix =
@@ -877,15 +972,43 @@ export default function App() {
         text: answer.text,
         chart: answer.chart,
       });
-    } catch (error) {
+    } catch {
       setCustomTurn({
         mood: 'deadpan',
-        text: error instanceof Error ? error.message : 'Mikko could not answer.',
+        text: "I couldn't reach my notes just now. Your question wasn't lost, try it again.",
+        retry: () => handleSendQuery(trimmed),
       });
     } finally {
       setAsking(false);
     }
   };
+
+  const handleChip = (chip: QuickChip) => {
+    setTopicsOpen(false);
+    if (chip.label === 'Compare peers') {
+      handleCompareYes();
+    } else if (chip.label === 'Can I buy it?') {
+      setBudgetOpen(true);
+    } else if (chip.label === 'Seasons') {
+      handleShowSeasons();
+    } else {
+      handleSendQuery(chip.query);
+    }
+  };
+
+  // Three prompts that fit the moment, shown above the Ask bar without opening the menu.
+  const suggestedChips = (() => {
+    const pick = (label: string) => QUICK_CHIPS.find((c) => c.label === label)!;
+    const first =
+      moneyMood.level !== 'happy'
+        ? pick('How am I doing?')
+        : budgetStatus?.worst
+          ? pick('Can I buy it?')
+          : pick('Safe this week?');
+    const second = seasonAhead ? pick('Seasons') : pick('Emergency fund');
+    const third = customTurn?.chart?.kind === 'finland_board' ? pick('Taxis?') : pick('Compare peers');
+    return [first, second, third];
+  })();
 
   const handleChangeWhatIfAsset = (asset: WhatIfAsset) => {
     if (customTurn?.chart?.kind !== 'what_if') return;
@@ -934,6 +1057,7 @@ export default function App() {
 
   const handlePledgeCutback = (label: string, monthlyAmount: number) => {
     if (userState.pledgedActive) return;
+    showReward(25, 15);
     setUserState((prev) => {
       if (!prev) return prev;
       const nextXp = prev.progress.xp + 25;
@@ -982,42 +1106,10 @@ export default function App() {
         }}
       >
         <div className="relative z-10 flex flex-col h-full">
-          <div
-            data-testid="test-bar"
-            className="min-h-7 px-3 py-0.5 flex items-center justify-between gap-2 border-b text-[10px] shrink-0"
-            style={{
-              paddingTop: 'env(safe-area-inset-top)',
-              backgroundColor: 'var(--app-surface-muted)',
-              borderColor: 'var(--app-border)',
-            }}
-          >
-            <span className="font-num uppercase tracking-wider text-[var(--app-text-muted)] font-semibold">
-              Test profile
-            </span>
-            <select
-              id="customer-picker"
-              aria-label="Test profile"
-              value={customerId}
-              onChange={(e) => {
-                setLedgerReady(false);
-                setCustomerId(e.target.value);
-                const url = new URL(window.location.href);
-                url.searchParams.set('customer', e.target.value);
-                window.history.replaceState(null, '', url);
-              }}
-              className="font-num text-[11px] font-semibold bg-[var(--app-bg)] border border-[var(--app-border)] px-1.5 py-0.5 cursor-pointer"
-            >
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  #{c.id.replace('CUST', '')} · {c.age}y
-                </option>
-              ))}
-            </select>
-          </div>
-
           <header
             className="min-h-11 px-3 flex items-center justify-between gap-2 border-b-2 shrink-0"
             style={{
+              paddingTop: 'env(safe-area-inset-top)',
               backgroundColor: 'var(--app-surface)',
               borderColor: 'var(--app-border)',
             }}
@@ -1038,7 +1130,8 @@ export default function App() {
                     Lvl {progress.level}
                   </span>
                   <div
-                    className="w-20 h-2.5 overflow-hidden"
+                    key={reward?.id ?? 'xp'}
+                    className={`w-20 h-3 overflow-hidden ${reward ? 'xp-pulse' : ''}`}
                     style={{
                       backgroundColor: 'var(--app-surface-muted)',
                       border: '1px solid var(--app-border)',
@@ -1052,7 +1145,7 @@ export default function App() {
                       }}
                     />
                   </div>
-                  <span className="font-num text-[11px] font-semibold text-[var(--app-text-muted)] whitespace-nowrap">
+                  <span className="font-num text-xs font-semibold text-[var(--app-text-muted)] whitespace-nowrap">
                     {xpInfo.currentInLevel}/{xpInfo.neededForNext} · {progress.coins}c
                   </span>
                 </div>
@@ -1061,18 +1154,18 @@ export default function App() {
           </header>
 
           <div
-            className="px-3 py-1.5 flex items-center justify-between gap-2 border-b-2 shrink-0"
+            className="px-3 py-2 flex items-center justify-between gap-2 border-b-2 shrink-0"
             style={{ backgroundColor: 'var(--app-surface)', borderColor: 'var(--app-border)' }}
             data-testid="account-balance"
           >
-            <div className="flex items-baseline gap-1.5 min-w-0">
+            <div className="flex items-baseline gap-2 min-w-0">
               <span
-                className="font-num text-sm font-bold shrink-0"
+                className="font-num text-xl font-bold shrink-0"
                 style={{ color: accountBalance < 0 ? 'var(--app-danger)' : 'var(--app-text)' }}
               >
                 {accountBalance < 0 ? '−' : ''}€{Math.abs(accountBalance).toLocaleString('en-IE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
-              <span className="text-[11px] text-[var(--app-text-muted)] truncate">
+              <span className="text-xs text-[var(--app-text-muted)] truncate">
                 {page === 'mikko'
                   ? `· €${baskets.totalSpend.toFixed(0)} spent`
                   : `· ${accountAsOf}`}
@@ -1084,10 +1177,10 @@ export default function App() {
                 data-testid="overview-toggle"
                 aria-expanded={overviewOpen}
                 onClick={() => setOverviewOpen((o) => !o)}
-                className="px-2 py-0.5 flex items-center gap-1.5 text-[11px] font-semibold cursor-pointer shrink-0 border border-[var(--app-border)]"
+                className="min-h-[44px] px-3 flex items-center gap-2 text-xs font-semibold cursor-pointer shrink-0 border border-[var(--app-border)]"
                 style={{ backgroundColor: overviewOpen ? 'var(--app-bg)' : 'var(--app-surface-muted)' }}
               >
-                <span className="flex items-center gap-0.5" aria-hidden="true">
+                <span className="flex items-center gap-1" aria-hidden="true">
                   <i className="w-1.5 h-1.5 inline-block" style={{ backgroundColor: '#007a45' }} />
                   <i className="w-1.5 h-1.5 inline-block" style={{ backgroundColor: '#2563eb' }} />
                   <i className="w-1.5 h-1.5 inline-block" style={{ backgroundColor: '#c25e00' }} />
@@ -1124,85 +1217,26 @@ export default function App() {
                 data-testid="overview-panel"
                 className="absolute top-0 left-0 right-0 z-30 shadow-md"
               >
+                <div
+                  className="px-2 py-1 flex items-center justify-between gap-2 border-b-2"
+                  style={{ backgroundColor: 'var(--app-surface)', borderColor: 'var(--app-border)' }}
+                >
+                  <span className="font-num text-xs font-bold uppercase tracking-wide">Overview</span>
+                  <button
+                    type="button"
+                    onClick={() => setOverviewOpen(false)}
+                    aria-label="Close overview"
+                    className="touch-x"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
                 <BasketsMeter
                   baskets={baskets}
                   monthKey={latestMonth}
                   lastShiftedBasket={lastShiftedBasket}
                 />
 
-                <div
-                  className="grid grid-cols-[1fr_1fr_auto] gap-1 px-2 py-1 short:hidden border-b"
-                  style={{ backgroundColor: 'var(--app-surface)', borderColor: 'var(--app-border)' }}
-                >
-                  <button
-                    type="button"
-                    data-testid="money-mood"
-                    onClick={() => {
-                      setOverviewOpen(false);
-                      handleShowMood();
-                    }}
-                    className="px-1.5 py-1 flex items-center gap-1 min-w-0 text-left cursor-pointer"
-                    style={{ backgroundColor: 'var(--app-surface-muted)', border: `1px solid ${MOOD_COLOR[moneyMood.level]}` }}
-                    aria-label={`Money mood ${moneyMood.level}, score ${moneyMood.score} of 100. Tap for details.`}
-                  >
-                    <span
-                      className="w-3.5 h-3.5 shrink-0 grid place-items-center text-[9px] font-bold text-white"
-                      style={{ backgroundColor: MOOD_COLOR[moneyMood.level] }}
-                      aria-hidden="true"
-                    >
-                      {moneyMood.level === 'happy' ? '✓' : moneyMood.level === 'mild' ? '–' : '!'}
-                    </span>
-                    <span className="text-[10px] font-semibold truncate">{MOOD_LABEL[moneyMood.level]}</span>
-                    <span className="font-num text-[10px] font-bold ml-auto shrink-0">{moneyMood.score}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    data-testid="emergency-fund"
-                    onClick={() => {
-                      setOverviewOpen(false);
-                      handleShowEmergencyFund();
-                    }}
-                    className="px-1.5 py-1 min-w-0 text-left cursor-pointer"
-                    style={{ backgroundColor: 'var(--app-surface-muted)', border: '1px solid var(--app-border)' }}
-                    aria-label={`Emergency fund ${moneyMood.emergency.monthsCovered.toFixed(1)} of ${moneyMood.emergency.goalMonths} months. Tap for details.`}
-                  >
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="text-[10px] font-semibold truncate">Fund</span>
-                      <span className="font-num text-[10px] font-bold shrink-0">
-                        {Math.min(99, moneyMood.emergency.monthsCovered).toFixed(1)}/{moneyMood.emergency.goalMonths} mo
-                      </span>
-                    </div>
-                    <div className="h-1 mt-0.5" style={{ backgroundColor: 'var(--app-surface)', border: '1px solid var(--app-border)' }}>
-                      <div
-                        className="h-full"
-                        style={{
-                          width: `${moneyMood.emergency.progressPct}%`,
-                          backgroundColor: EF_COLOR[moneyMood.emergency.status],
-                        }}
-                      />
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    data-testid="budget-bar"
-                    onClick={() => {
-                      setOverviewOpen(false);
-                      setBudgetOpen(true);
-                    }}
-                    className="px-2 py-1 flex items-center gap-1 text-[10px] font-semibold cursor-pointer shrink-0"
-                    style={{ backgroundColor: 'var(--app-surface-muted)', border: '1px solid var(--app-border)' }}
-                    aria-label={budgetStatus ? 'Budget this month. Tap to edit or check a purchase.' : 'Set a monthly budget'}
-                  >
-                    <span>
-                      {budgetStatus?.worst
-                        ? `€${Math.max(0, budgetStatus.worst.left).toFixed(0)} left`
-                        : 'Budget'}
-                    </span>
-                    <ChevronRight className="w-3 h-3 shrink-0" />
-                  </button>
-                </div>
                 <button
                   type="button"
                   data-testid="open-seasons"
@@ -1210,52 +1244,191 @@ export default function App() {
                     setOverviewOpen(false);
                     handleShowSeasons();
                   }}
-                  className="w-full px-2 py-1 flex items-center justify-between gap-2 text-[10px] font-semibold border-b-2 cursor-pointer"
+                  className="w-full min-h-[44px] px-3 flex items-center justify-between gap-2 text-xs font-semibold border-b-2 cursor-pointer"
                   style={{ backgroundColor: 'var(--app-surface)', borderColor: 'var(--app-border)' }}
                 >
                   <span>Seasons{seasonAhead ? `: ${seasonAhead.title}` : ''}</span>
-                  <ChevronRight className="w-3 h-3 shrink-0" />
+                  <ChevronRight className="w-4 h-4 shrink-0" />
                 </button>
+                <label
+                  htmlFor="customer-picker"
+                  data-testid="test-bar"
+                  className="min-h-[44px] px-3 flex items-center justify-between gap-2 border-b-2 text-xs"
+                  style={{ backgroundColor: 'var(--app-surface-muted)', borderColor: 'var(--app-border)' }}
+                >
+                  <span className="font-num uppercase tracking-wider text-[var(--app-text-muted)] font-semibold">
+                    Test profile
+                  </span>
+                  <select
+                    id="customer-picker"
+                    value={customerId}
+                    onChange={(e) => {
+                      setLedgerReady(false);
+                      setCustomerId(e.target.value);
+                      const url = new URL(window.location.href);
+                      url.searchParams.set('customer', e.target.value);
+                      window.history.replaceState(null, '', url);
+                    }}
+                    className="min-h-[36px] px-2 font-num text-base font-semibold bg-[var(--app-bg)] border border-[var(--app-border)] cursor-pointer"
+                  >
+                    {customers.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        #{c.id.replace('CUST', '')} · {c.age}y
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </div>
             )}
 
-            <div className="relative h-[296px] shrink-0 short:h-[140px]">
-              <div aria-hidden="true">
+            {/* The room is drawn at a fixed height and never resizes, so Mikko keeps one size.
+                Messages and charts float over the floor below him, and over him when they need the space. */}
+            <div
+              data-testid="mikko-room"
+              className="absolute inset-0"
+              style={{ backgroundColor: '#6f451f' }}
+            >
+              <div className={SCENE_BOX} aria-hidden="true">
                 <PixelMentorScene
                   mood={activeMood}
                   styleId={progress.equippedStyle}
                   slipsSharePct={slipsSharePct}
                   streakWeeks={progress.streakWeeks}
-                  thinking={asking}
+                  thinking={asking || !speechOpen}
                   hasQuestion={(!customTurn && Boolean(activeQuest)) || Boolean(customTurn?.offerCompare)}
                   variant="background"
                 />
               </div>
-              {customTurn?.chart?.kind === 'finland_board' && (
+              {!(speechOpen && customTurn?.chart?.kind === 'finland_board') && (() => {
+                const worst = budgetStatus?.worst ?? null;
+                const limit = budgetStatus?.lines.reduce((s, l) => s + l.limit, 0) ?? 0;
+                const spent = budgetStatus?.lines.reduce((s, l) => s + l.spent, 0) ?? 0;
+                const budgetColor = worst?.status === 'over' ? 'var(--app-danger)' : worst ? '#b45309' : 'var(--app-border)';
+                const budgetText = !budgetStatus || !limit
+                  ? 'Set budget'
+                  : worst?.status === 'over'
+                    ? 'Over budget'
+                    : worst
+                      ? `€${Math.max(0, worst.left).toFixed(0)} left`
+                      : `${Math.round((spent / limit) * 100)}% used`;
+                const ef = moneyMood.emergency;
+                const pill = 'min-h-[44px] px-2 flex items-center gap-1 min-w-0 text-xs font-semibold cursor-pointer border-2';
+                return (
+                  <div
+                    data-testid="status-strip"
+                    className="absolute top-2 left-2 right-2 z-20 grid grid-cols-3 gap-2"
+                  >
+                    <button
+                      type="button"
+                      data-testid="money-mood"
+                      onClick={handleShowMood}
+                      className={pill}
+                      style={{ backgroundColor: 'var(--app-surface)', borderColor: MOOD_COLOR[moneyMood.level] }}
+                      aria-label={`Money mood: ${MOOD_LABEL[moneyMood.level]}, score ${moneyMood.score} of 100. Tap for details.`}
+                    >
+                      <span
+                        className="w-4 h-4 shrink-0 grid place-items-center text-xs font-bold text-white"
+                        style={{ backgroundColor: MOOD_COLOR[moneyMood.level] }}
+                        aria-hidden="true"
+                      >
+                        {moneyMood.level === 'happy' ? '✓' : moneyMood.level === 'mild' ? '–' : '!'}
+                      </span>
+                      <span className="truncate">Mood</span>
+                      <span className="font-num ml-auto shrink-0">{moneyMood.score}</span>
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="emergency-fund"
+                      onClick={handleShowEmergencyFund}
+                      className={`${pill} flex-col !items-stretch justify-center !gap-1`}
+                      style={{ backgroundColor: 'var(--app-surface)', borderColor: 'var(--app-border)' }}
+                      aria-label={`Emergency fund ${ef.monthsCovered.toFixed(1)} of ${ef.goalMonths} months. Tap for details.`}
+                    >
+                      <span className="flex items-center justify-between gap-1">
+                        <span className="truncate">Fund</span>
+                        <span className="font-num shrink-0">
+                          {Math.min(99, ef.monthsCovered).toFixed(1)}/{ef.goalMonths}
+                        </span>
+                      </span>
+                      <span className="block h-1" style={{ backgroundColor: 'var(--app-surface-muted)' }} aria-hidden="true">
+                        <span
+                          className="block h-full"
+                          style={{ width: `${ef.progressPct}%`, backgroundColor: EF_COLOR[ef.status] }}
+                        />
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="budget-bar"
+                      data-status={worst?.status ?? (budgetStatus ? 'ok' : 'none')}
+                      onClick={() => setBudgetOpen(true)}
+                      className={pill}
+                      style={{
+                        backgroundColor: worst?.status === 'over' ? 'var(--app-danger)' : 'var(--app-surface)',
+                        color: worst?.status === 'over' ? '#ffffff' : 'var(--app-text)',
+                        borderColor: budgetColor,
+                      }}
+                      aria-label={budgetStatus ? `Budget: ${budgetText}. Tap to edit or check a purchase.` : 'Set a monthly budget'}
+                    >
+                      <span className="truncate">{budgetText}</span>
+                      <ChevronRight className="w-4 h-4 shrink-0 ml-auto" />
+                    </button>
+                  </div>
+                );
+              })()}
+              {speechOpen && customTurn?.chart?.kind === 'finland_board' && (
+                <div className={`${SCENE_BOX} z-10 pointer-events-none`}>
                 <FinlandWall
                   board={customTurn.chart}
                   picked={customTurn.pick}
                   onPick={handlePickCategory}
                   onSeasons={handleShowSeasons}
+                  onShowAll={() => setBoardTable((v) => !v)}
+                  tableOpen={boardTable}
                   onClose={() => {
                     setCustomTurn(null);
                   }}
+                />
+                </div>
+              )}
+              {reward && (
+                <div className={`${SCENE_BOX} z-20 pointer-events-none`}>
+                <div
+                  key={reward.id}
+                  data-testid="reward-float"
+                  role="status"
+                  className="reward-float absolute left-1/2 top-[40%] z-20 px-3 py-1 font-num text-sm font-bold whitespace-nowrap border-2 pointer-events-none"
+                  style={{
+                    backgroundColor: 'var(--app-accent)',
+                    color: 'var(--app-accent-fg)',
+                    borderColor: 'var(--app-border)',
+                    boxShadow: 'var(--pixel-shadow)',
+                  }}
+                >
+                  {reward.text}
+                </div>
+                </div>
+              )}
+              {!speechOpen && (
+                <button
+                  type="button"
+                  data-testid="mikko-reopen"
+                  className="absolute inset-0 z-10 cursor-pointer"
+                  aria-label="Show Mikko's message"
+                  onClick={() => setSpeechOpen(true)}
                 />
               )}
             </div>
 
             <main
               ref={dialogueAreaRef}
-              className={`flex-1 min-h-0 px-3 pt-1.5 pb-2 flex flex-col ${dialogueScrolls ? 'overflow-y-auto' : 'overflow-hidden'}`}
-              style={{ backgroundColor: '#6f451f' }}
+              className={`absolute inset-x-0 bottom-0 max-h-[calc(100%-56px)] z-20 px-3 pt-2 pb-2 flex flex-col ${dialogueScrolls ? 'overflow-y-auto' : 'overflow-hidden'}`}
             >
-              {/* No chart: the message sits on the bottom and grows upward. A chart keeps the old top-down stack. */}
-              {!customTurn?.chart && <div className="min-h-0 flex-1" aria-hidden="true" />}
-              <div ref={dialogueRef} className="shrink-0 flex flex-col gap-1.5">
+              <div ref={dialogueRef} className="shrink-0 flex flex-col gap-2">
               {levelUpToast && (
                 <div
                   data-testid="level-up-banner"
-                  className="px-2.5 py-1 text-[11px] font-semibold flex items-center justify-between gap-2 border-2"
+                  className="px-3 py-1 text-xs font-semibold flex items-center justify-between gap-2 border-2"
                   style={{
                     backgroundColor: 'var(--app-accent)',
                     color: 'var(--app-accent-fg)',
@@ -1275,8 +1448,8 @@ export default function App() {
                   </button>
                 </div>
               )}
-              {customTurn?.chart ? (
-                <div className="space-y-1.5">
+              {speechOpen && (customTurn?.chart ? (
+                <div className="space-y-2">
                   <div
                     data-testid="mentor-speech"
                     className="pixel-card px-3 py-2 text-xs leading-snug font-medium flex items-start justify-between gap-2"
@@ -1286,13 +1459,14 @@ export default function App() {
                     </span>
                     <button
                       type="button"
-                      onClick={() => setCustomTurn(null)}
-                      className="text-[11px] font-semibold underline shrink-0 cursor-pointer text-[var(--app-text-muted)] hover:text-[var(--app-text)]"
+                      onClick={() => setSpeechOpen(false)}
+                      aria-label="Close"
+                      className="touch-x"
                     >
-                      {activeQuest ? 'Next' : 'Close'}
+                      <X className="w-4 h-4" />
                     </button>
                   </div>
-                  <div className={customTurn.chart.kind === 'finland_board' ? 'hidden short:block' : ''}>
+                  <div className={customTurn.chart.kind === 'finland_board' && !boardTable ? 'hidden short:block' : ''}>
                     <FinanceChart
                       chart={customTurn.chart}
                       onChangeWhatIfAsset={handleChangeWhatIfAsset}
@@ -1307,8 +1481,18 @@ export default function App() {
                   aria-label="Mikko Dialogue"
                   className="pixel-card p-3 space-y-2"
                 >
-                  <div className="font-num font-bold text-xs tracking-wide">
-                    Mikko · Money Coach
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-num font-bold text-xs tracking-wide">
+                      Mikko · Money Coach
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSpeechOpen(false)}
+                      aria-label="Close"
+                      className="touch-x"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
                   </div>
 
                 <p
@@ -1318,12 +1502,24 @@ export default function App() {
                   {asking ? 'Grabbing my notes… checking your numbers.' : activeSpeech}
                 </p>
 
+                {customTurn?.retry && !asking && (
+                  <button
+                    type="button"
+                    data-testid="retry-turn"
+                    onClick={customTurn.retry}
+                    className="w-full min-h-[44px] px-3 text-xs font-semibold pixel-btn cursor-pointer"
+                    style={{ backgroundColor: 'var(--app-accent)', color: 'var(--app-accent-fg)' }}
+                  >
+                    Try again
+                  </button>
+                )}
+
                 {customTurn?.offerWhatIf && (
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
                       onClick={handleOpenOfferedChart}
-                      className="min-h-[40px] px-3 text-xs font-semibold pixel-btn cursor-pointer flex items-center justify-center gap-1"
+                      className="min-h-[44px] px-3 text-xs font-semibold pixel-btn cursor-pointer flex items-center justify-center gap-1"
                       style={{
                         backgroundColor: 'var(--app-accent)',
                         color: 'var(--app-accent-fg)',
@@ -1335,7 +1531,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => setCustomTurn(null)}
-                      className="min-h-[40px] px-3 text-xs font-semibold pixel-btn cursor-pointer"
+                      className="min-h-[44px] px-3 text-xs font-semibold pixel-btn cursor-pointer"
                       style={{
                         backgroundColor: 'var(--app-surface-muted)',
                         color: 'var(--app-text)',
@@ -1351,7 +1547,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={handleCompareYes}
-                      className="min-h-[38px] px-3 text-xs font-semibold pixel-btn cursor-pointer flex items-center justify-center gap-1"
+                      className="min-h-[44px] px-3 text-xs font-semibold pixel-btn cursor-pointer flex items-center justify-center gap-1"
                       style={{ backgroundColor: 'var(--app-accent)', color: 'var(--app-accent-fg)' }}
                     >
                       <span>Compare to Finland</span>
@@ -1362,7 +1558,7 @@ export default function App() {
                       onClick={() => {
                         setCustomTurn(null);
                       }}
-                      className="min-h-[38px] px-3 text-xs font-semibold pixel-btn cursor-pointer"
+                      className="min-h-[44px] px-3 text-xs font-semibold pixel-btn cursor-pointer"
                       style={{ backgroundColor: 'var(--app-surface-muted)', color: 'var(--app-text)' }}
                     >
                       {activeQuest ? 'Check Spend (+XP)' : 'Ask a Question'}
@@ -1371,20 +1567,20 @@ export default function App() {
                 )}
 
                 {!customTurn && activeQuest && (
-                  <div className="space-y-1.5" data-testid="suspicion-quest">
+                  <div className="space-y-2" data-testid="suspicion-quest">
                     {activeQuest.choices.map((ch) => (
                       <button
                         key={ch.id}
                         type="button"
                         onClick={() => handleAnswerQuest(ch.id)}
-                        className="w-full min-h-[38px] px-3 py-1.5 text-left text-xs font-semibold pixel-btn flex items-center justify-between gap-2 cursor-pointer"
+                        className="w-full min-h-[44px] px-3 py-2 text-left text-xs font-semibold pixel-btn flex items-center justify-between gap-2 cursor-pointer"
                         style={{
                           backgroundColor: 'var(--app-surface-muted)',
                           color: 'var(--app-text)',
                         }}
                       >
                         <span>{ch.label}</span>
-                        <span className="font-num text-[11px] text-[var(--app-text-muted)] shrink-0">
+                        <span className="font-num text-xs text-[var(--app-text-muted)] shrink-0">
                           {ch.xp > 0 ? `+${ch.xp} XP` : 'Claim'}
                         </span>
                       </button>
@@ -1394,7 +1590,7 @@ export default function App() {
                         type="button"
                         data-testid="quest-skip"
                         onClick={handleSkipQuest}
-                        className="min-h-[32px] px-2 text-[11px] font-semibold underline underline-offset-2 cursor-pointer text-[var(--app-text-muted)] hover:text-[var(--app-text)]"
+                        className="min-h-[44px] px-3 text-xs font-semibold underline underline-offset-2 cursor-pointer text-[var(--app-text-muted)] active:text-[var(--app-text)]"
                       >
                         Not now, don't ask again
                       </button>
@@ -1402,24 +1598,8 @@ export default function App() {
                   </div>
                 )}
 
-                {customTurn && !customTurn.offerWhatIf && !customTurn.offerCompare && (
-                  <div className="flex justify-end">
-                    <button
-                      type="button"
-                      onClick={() => setCustomTurn(null)}
-                      className="px-3 py-1.5 text-xs font-semibold pixel-btn cursor-pointer"
-                      style={{
-                        backgroundColor: 'var(--app-surface-muted)',
-                        color: 'var(--app-text)',
-                      }}
-                    >
-                      {activeQuest ? 'Back to Check' : 'Clear'}
-                    </button>
-                  </div>
-                )}
-
               </section>
-            )}
+            ))}
               </div>
           </main>
           </div>
@@ -1434,40 +1614,29 @@ export default function App() {
             {topicsOpen && (
               <div
                 data-testid="topics-menu"
-                className="absolute left-2 right-2 bottom-full mb-1.5 pixel-card p-2.5 space-y-2 z-20"
+                className="absolute left-2 right-2 bottom-full mb-2 pixel-card p-3 space-y-2 z-20"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-num text-[11px] font-bold uppercase tracking-wide">
+                  <span className="font-num text-xs font-bold uppercase tracking-wide">
                     Quick prompts
                   </span>
                   <button
                     type="button"
                     onClick={() => setTopicsOpen(false)}
                     aria-label="Close quick prompts"
-                    className="p-0.5 cursor-pointer text-[var(--app-text-muted)] hover:text-[var(--app-text)]"
+                    className="touch-x"
                   >
-                    <X className="w-3.5 h-3.5" />
+                    <X className="w-4 h-4" />
                   </button>
                 </div>
-                <div className="grid grid-cols-2 gap-1.5">
+                <div className="grid grid-cols-2 gap-2">
                   {QUICK_CHIPS.map((chip) => (
                     <button
                       key={chip.label}
                       type="button"
-                      onClick={() => {
-                        setTopicsOpen(false);
-                        if (chip.label === 'Compare peers') {
-                          handleCompareYes();
-                        } else if (chip.label === 'Can I buy it?') {
-                          setBudgetOpen(true);
-                        } else if (chip.label === 'Seasons') {
-                          handleShowSeasons();
-                        } else {
-                          handleSendQuery(chip.query);
-                        }
-                      }}
+                      onClick={() => handleChip(chip)}
                       disabled={asking}
-                      className="px-2.5 py-2 text-left text-[11px] font-semibold pixel-btn cursor-pointer truncate"
+                      className="min-h-[44px] px-3 py-2 text-left text-xs font-semibold pixel-btn cursor-pointer truncate"
                       style={{
                         backgroundColor: 'var(--app-surface-muted)',
                         color: 'var(--app-text)',
@@ -1480,22 +1649,39 @@ export default function App() {
               </div>
             )}
 
+            <div
+              data-testid="suggested-chips"
+              className="flex gap-2 mb-2 overflow-x-auto short:hidden"
+              aria-label="Suggested questions"
+            >
+              {suggestedChips.map((chip) => (
+                <button
+                  key={chip.label}
+                  type="button"
+                  onClick={() => handleChip(chip)}
+                  disabled={asking}
+                  className="min-h-[44px] px-3 text-xs font-semibold pixel-btn cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-50"
+                  style={{ backgroundColor: 'var(--app-surface-muted)', color: 'var(--app-text)' }}
+                >
+                  {chip.label}
+                </button>
+              ))}
+            </div>
             <form
               onSubmit={(e) => {
                 e.preventDefault();
                 handleSendQuery(chatInput);
               }}
-              className="flex gap-1.5"
+              className="flex gap-2"
             >
               <button
                 type="button"
                 data-testid="topics-toggle"
                 onClick={() => setTopicsOpen((o) => !o)}
                 aria-expanded={topicsOpen}
-                aria-label="Quick prompts"
-                title="Quick prompts"
+                aria-label="More quick prompts"
                 disabled={asking}
-                className="min-h-[38px] px-2.5 flex items-center justify-center pixel-btn cursor-pointer shrink-0"
+                className="min-h-[44px] min-w-[44px] px-3 flex items-center justify-center pixel-btn cursor-pointer shrink-0"
                 style={{
                   backgroundColor: topicsOpen ? 'var(--app-bg)' : 'var(--app-surface-muted)',
                   color: 'var(--app-text)',
@@ -1513,12 +1699,13 @@ export default function App() {
                 onChange={(e) => setChatInput(e.target.value)}
                 placeholder={asking ? 'Mikko is looking…' : 'Ask Mikko...'}
                 disabled={asking}
-                className="flex-1 min-h-[38px] px-3 text-xs border-2 bg-[var(--app-bg)] border-[var(--app-border)] focus:outline-none focus:border-[var(--app-accent)]"
+                enterKeyHint="send"
+                className="flex-1 min-w-0 min-h-[44px] px-3 text-base border-2 bg-[var(--app-bg)] border-[var(--app-border)] focus:outline-none focus:border-[var(--app-accent)]"
               />
               <button
                 type="submit"
                 disabled={asking}
-                className="min-h-[38px] px-3.5 text-xs font-semibold pixel-btn cursor-pointer whitespace-nowrap"
+                className="min-h-[44px] px-4 text-xs font-semibold pixel-btn cursor-pointer whitespace-nowrap"
                 style={{
                   backgroundColor: 'var(--app-accent)',
                   color: 'var(--app-accent-fg)',
