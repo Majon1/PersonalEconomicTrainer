@@ -97,10 +97,7 @@ if (process.env.NODE_ENV === "production" && existsSync(join(ROOT, "dist", "inde
   app.use(vite.middlewares);
 }
 
-// HOST=0.0.0.0 lets a phone on the same Wi-Fi open the app at http://<this computer's IP>:PORT.
-// Anyone on that network can then use it (and the chat), so only on a network you trust.
-const HOST = process.env.HOST || "127.0.0.1";
-app.listen(PORT, HOST, () => {
+app.listen(PORT, "0.0.0.0", () => {
   const model = process.env.GEMINI_MODEL || "gemini-4-hydrogen";
   console.log(`Personal Economic Trainer at http://localhost:${PORT}`);
   if (HOST === "0.0.0.0") console.log(`Also reachable on your network: http://<this computer's IP>:${PORT}`);
