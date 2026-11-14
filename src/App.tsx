@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronRight, ShieldCheck, Volume2, VolumeX } from 'lucide-react';
+import { ChevronDown, ChevronRight, ShieldCheck, Volume2, VolumeX } from 'lucide-react';
 import { BasketsMeter } from './components/BasketsMeter';
 import { FinanceChart } from './components/FinanceChart';
 import { LockerView } from './components/LockerView';
@@ -20,7 +20,6 @@ import {
   purchaseOrEquipItem,
   resolveInterrogationChoice,
   simulateWhatIf,
-  xpProgressInLevel,
 } from './game/engine';
 import { soundFx } from './game/sound';
 import type {
@@ -114,7 +113,7 @@ function loadState(customerId: string): SavedUserState {
 
 const QUICK_CHIPS = [
   { label: 'How am I doing?', query: 'How am I doing this month? Why are you in that mood?' },
-  { label: 'Safe/wk?', query: 'What is safe for me to spend this week?' },
+  { label: 'This week', query: 'What is safe for me to spend this week?' },
   { label: 'Can I buy it?', query: '' },
   { label: 'Junk food?', query: 'How much did I spend on junk food this month (cafés, fast food, kiosk snacks)?' },
   { label: 'Fun?', query: 'How much did I spend on fun this month (events, hobbies, nights out)?' },
@@ -134,6 +133,7 @@ export default function App() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [ledgerReady, setLedgerReady] = useState(false);
   const [asking, setAsking] = useState(false);
+  const [monthOpen, setMonthOpen] = useState(false);
   const [history, setHistory] = useState<{ role: 'user' | 'mentor'; text: string }[]>([]);
   const [userState, setUserState] = useState<SavedUserState | null>(null);
   const [lockerOpen, setLockerOpen] = useState(false);
@@ -268,7 +268,6 @@ export default function App() {
   );
 
   const activeQuest = activeQuests[0] ?? null;
-  const xpInfo = xpProgressInLevel(progress?.xp ?? 0);
 
   const moneyMood = useMemo(
     () => computeMoneyMood(visibleTxs, userState?.overrides ?? [], latestMonth),
@@ -813,6 +812,30 @@ export default function App() {
             </div>
           ) : (
           <>
+          <button
+            type="button"
+            onClick={() => {
+              soundFx.playClick();
+              setMonthOpen((open) => !open);
+            }}
+            aria-expanded={monthOpen}
+            className="min-h-11 px-3 py-2 flex items-center justify-between gap-2 border-b-2 shrink-0 text-left cursor-pointer"
+            style={{ backgroundColor: 'var(--app-surface)', borderColor: 'var(--app-border)' }}
+          >
+            <span className="min-w-0">
+              <span className="block text-[11px] font-semibold text-[var(--app-text-muted)]">This month</span>
+              <span className="block text-sm font-semibold truncate">{MOOD_LABEL[moneyMood.level]}</span>
+            </span>
+            <span className="flex items-center gap-2 shrink-0">
+              <span className="font-num text-xs font-bold">
+                Fund {Math.min(99, moneyMood.emergency.monthsCovered).toFixed(1)}/{moneyMood.emergency.goalMonths}
+              </span>
+              <ChevronDown className={`w-4 h-4 transition-transform ${monthOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+            </span>
+          </button>
+
+          {monthOpen && (
+          <>
           <BasketsMeter
             baskets={baskets}
             lastShiftedBasket={lastShiftedBasket}
@@ -908,15 +931,18 @@ export default function App() {
               </div>
             )}
           </button>
+          </>
+          )}
 
           {/* OPEN STAGE WINDOW: Mikko's room, anchored to the desk edge */}
-          <div className="relative flex-1 min-h-[120px] framed:min-h-[200px] short:hidden">
+          <div className="relative flex-[1.6] min-h-[220px] short:min-h-[148px] short:flex-none">
             <div aria-hidden="true">
               <PixelMentorScene
                 mood={activeMood}
                 styleId={progress.equippedStyle}
                 slipsSharePct={slipsSharePct}
                 streakWeeks={progress.streakWeeks}
+                thinking={asking}
                 variant="background"
               />
             </div>
@@ -995,37 +1021,12 @@ export default function App() {
                 aria-label="Mikko Dialogue"
                 className="pixel-card p-3 space-y-2.5"
               >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-num font-bold text-xs tracking-wide">
-                    Mikko
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <span className="font-num text-[11px] text-[var(--app-text-muted)]">
-                      {xpInfo.currentInLevel}/{xpInfo.neededForNext} XP
-                    </span>
-                    <div
-                      className="w-16 h-2 overflow-hidden"
-                      style={{
-                        backgroundColor: 'var(--app-surface-muted)',
-                        border: '1px solid var(--app-border)',
-                      }}
-                    >
-                      <div
-                        className="h-full transition-all duration-300"
-                        style={{
-                          width: `${xpInfo.pct}%`,
-                          backgroundColor: 'var(--app-accent-bright)',
-                        }}
-                      />
-                    </div>
-                  </div>
-                </div>
-
                 <p
                   data-testid="mentor-speech"
-                  className="text-xs leading-relaxed font-medium"
+                  className="text-sm leading-relaxed font-medium"
                 >
-                  {activeSpeech}
+                  <span className="font-num font-bold">Mikko. </span>
+                  {asking ? 'One moment. I am looking through your numbers.' : activeSpeech}
                 </p>
 
                 {customTurn?.offerWhatIf && (
@@ -1120,17 +1121,6 @@ export default function App() {
                   </div>
                 )}
 
-                {!customTurn && !activeQuest && (
-                  <button
-                    type="button"
-                    onClick={handleCompareYes}
-                    className="w-full min-h-[38px] px-3 text-xs font-semibold pixel-btn cursor-pointer flex items-center justify-between gap-2"
-                    style={{ backgroundColor: 'var(--app-surface-muted)', color: 'var(--app-text)' }}
-                  >
-                    <span>Compare me with other Finns</span>
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
-                )}
               </section>
             )}
           </main>
@@ -1144,7 +1134,7 @@ export default function App() {
             }}
           >
             <div className="flex gap-1.5 overflow-x-auto short:hidden">
-              {QUICK_CHIPS.map((chip) => (
+              {QUICK_CHIPS.slice(0, 3).map((chip) => (
                 <button
                   key={chip.label}
                   type="button"

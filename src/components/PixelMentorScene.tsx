@@ -7,6 +7,8 @@ interface PixelMentorSceneProps {
   slipsSharePct: number;
   streakWeeks: number;
   variant?: 'background' | 'mini';
+  /** Open laptop and typing, while Mikko looks something up. */
+  thinking?: boolean;
 }
 
 export function PixelMentorScene({
@@ -15,6 +17,7 @@ export function PixelMentorScene({
   slipsSharePct,
   streakWeeks,
   variant = 'background',
+  thinking = false,
 }: PixelMentorSceneProps) {
   const [tick, setTick] = useState(0);
 
@@ -72,7 +75,11 @@ export function PixelMentorScene({
   }
 
   const eyeDirX = mood === 'suspicious' ? (tick % 4 < 2 ? 0 : 1) : 0;
-  const eyeDirY = mood === 'pointing' ? 1 : 0;
+  let eyeDirY = mood === 'pointing' ? 1 : 0;
+  if (thinking) {
+    headY += 2;
+    eyeDirY = 1;
+  }
 
   // Mini preview for the Locker drawer
   if (variant === 'mini') {
@@ -115,6 +122,7 @@ export function PixelMentorScene({
     <div
       className="absolute inset-0 pointer-events-none select-none overflow-hidden"
       data-testid="pixel-mentor"
+      data-thinking={thinking ? 'true' : 'false'}
       data-mood={mood}
       data-style={styleId}
       style={{
@@ -128,7 +136,7 @@ export function PixelMentorScene({
         shapeRendering="crispEdges"
         className="w-full h-full pixel-crisp"
         role="img"
-        aria-label={`Mikko the financial coach (${mood})`}
+        aria-label={`Mikko the financial coach (${mood}${thinking ? ', typing on a laptop' : ''})`}
       >
         {/* Wall & Wainscoting */}
         <rect x="0" y="0" width="80" height="72" fill="#d7e5dc" />
@@ -192,8 +200,15 @@ export function PixelMentorScene({
             </>
           )}
 
-          {/* Arms per Pose */}
-          {(mood === 'impressed' || mood === 'level_up') && (
+          {/* Arms per Pose. Typing replaces them while he searches. */}
+          {thinking && (
+            <>
+              <rect x="26" y="50" width="8" height="6" fill={coatColor} />
+              <rect x="46" y="50" width="8" height="6" fill={coatColor} />
+            </>
+          )}
+
+          {!thinking && (mood === 'impressed' || mood === 'level_up') && (
             <>
               <rect x="24" y={stepOdd ? 35 : 38} width="5" height="14" fill={coatColor} />
               <rect x="24" y={stepOdd ? 32 : 35} width="5" height="3" fill="#f3cbb1" />
@@ -202,7 +217,7 @@ export function PixelMentorScene({
             </>
           )}
 
-          {mood === 'bluff_caught' && (
+          {!thinking && mood === 'bluff_caught' && (
             <>
               <rect x="29" y="53" width="22" height="4" fill={coatTrim} />
               <rect x="33" y="53" width="4" height="3" fill="#f3cbb1" />
@@ -210,7 +225,7 @@ export function PixelMentorScene({
             </>
           )}
 
-          {mood === 'suspicious' && (
+          {!thinking && mood === 'suspicious' && (
             <g transform={`translate(0, ${stepOdd ? -1 : 0})`}>
               {/* Left arm holding magnifying glass */}
               <rect x="24" y="46" width="5" height="9" fill={coatColor} />
@@ -349,8 +364,31 @@ export function PixelMentorScene({
         <rect x="64" y="56" width="5" height="5" fill="#007a45" />
         <rect x="69" y="57" width="2" height="3" fill="#007a45" />
 
+        {/* Laptop on the desk. Closed until he is searching, then he types. */}
+        {thinking ? (
+          <g data-testid="mikko-laptop">
+            <rect x="28" y="46" width="24" height="12" fill="#112218" />
+            <rect x="30" y="48" width="20" height="8" fill="#0b3d2a" />
+            <rect x="32" y="50" width={5 + (tick % 4) * 2} height="1" fill="#86efac" />
+            <rect x="32" y="52" width={4 + ((tick + 1) % 4) * 2} height="1" fill="#86efac" />
+            <rect x="32" y="54" width={3 + ((tick + 2) % 3) * 2} height="1" fill="#bbf7d0" />
+            {tick % 2 === 0 && <rect x={35 + (tick % 4)} y="54" width="1" height="2" fill="#fde047" />}
+            <rect x="24" y="57" width="32" height="5" fill="#334155" />
+            <rect x="26" y="58" width="28" height="2" fill="#1e293b" />
+            <rect x={28 + (tick % 4) * 2} y="58" width="2" height="1" fill="#94a3b8" />
+            <rect x={31 + (tick % 2)} y="56" width="4" height="2" fill="#f3cbb1" />
+            <rect x={43 - (tick % 2)} y="56" width="4" height="2" fill="#f3cbb1" />
+          </g>
+        ) : (
+          <g data-testid="mikko-laptop" aria-hidden="true">
+            <rect x="18" y="51" width="12" height="2" fill="#334155" />
+            <rect x="17" y="53" width="14" height="5" fill="#1e293b" />
+            <rect x="19" y="54" width="10" height="1" fill="#475569" />
+          </g>
+        )}
+
         {/* Pointing Arm Reaching Over Desk Toward Floating Chart Below */}
-        {mood === 'pointing' && (
+        {!thinking && mood === 'pointing' && (
           <g transform={`translate(0, ${stepOdd ? 1 : 0})`}>
             <rect x="46" y="49" width="9" height="4" fill={coatColor} />
             <rect x="52" y="52" width="6" height="6" fill={coatColor} />
