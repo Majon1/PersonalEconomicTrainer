@@ -81,11 +81,10 @@ interface ChatTurn {
 }
 
 const CHAT_KEEP = 12;
-/** How far below the top of the room a message may reach (his desk line); matches the max-h classes on <main>. */
-const MESSAGE_TOP = 248;
-const MESSAGE_TOP_SHORT = 112;
-/** Mikko's room: one fixed height from the top, so he is always drawn at the same size. */
-const SCENE_BOX = 'absolute inset-x-0 top-0 h-[296px] short:h-[140px]';
+/** Mikko's desk line as a share of the room height; messages without a chart stay below it. Matches the max-h class on <main>. */
+const DESK_LINE = 0.84;
+/** Mikko's room: one height per screen (--room-h), from the top, so he is always drawn at the same size. */
+const SCENE_BOX = 'absolute inset-x-0 top-0 h-[var(--room-h)]';
 /** Mikko keeps looking for at least this long, even when the answer is already back. */
 const PONDER_MS = 2000;
 
@@ -562,7 +561,8 @@ export default function App() {
       const parent = area.parentElement;
       if (!choices || !parent) return;
       const n = choices.childElementCount;
-      const top = window.matchMedia('(max-height: 520px)').matches ? MESSAGE_TOP_SHORT : MESSAGE_TOP;
+      const room = parent.querySelector('[data-testid=pixel-mentor]')?.clientHeight ?? 0;
+      const top = room * DESK_LINE;
       const forChoices = parent.clientHeight - top - padding - (dialogue.scrollHeight - choices.offsetHeight);
       setQuestCompact(n * 44 + (n - 1) * 8 + 4 > forChoices);
     };
@@ -616,7 +616,7 @@ export default function App() {
           <div className="absolute inset-x-0 bottom-0 z-20 px-3 py-2">
             <div className="pixel-card p-3 space-y-2" role="status" data-testid="loading-state">
               <div className="font-num font-bold text-xs tracking-wide">Mikko · Money Coach</div>
-              <p className="text-xs leading-relaxed font-medium">
+              <p className="text-sm leading-relaxed font-medium">
                 {loadError
                   ? `${loadError} My notes are out of reach for a moment.`
                   : 'Opening your account… grabbing my notes.'}
@@ -629,7 +629,7 @@ export default function App() {
                     setLoadError(null);
                     setReloadKey((k) => k + 1);
                   }}
-                  className="w-full min-h-[44px] px-3 text-xs font-semibold pixel-btn cursor-pointer"
+                  className="w-full min-h-[44px] px-3 text-sm font-semibold pixel-btn cursor-pointer"
                   style={{ backgroundColor: 'var(--app-accent)', color: 'var(--app-accent-fg)' }}
                 >
                   Try again
@@ -1244,7 +1244,7 @@ export default function App() {
                     setOverviewOpen(false);
                     handleShowSeasons();
                   }}
-                  className="w-full min-h-[44px] px-3 flex items-center justify-between gap-2 text-xs font-semibold border-b-2 cursor-pointer"
+                  className="w-full min-h-[44px] px-3 flex items-center justify-between gap-2 text-sm font-semibold border-b-2 cursor-pointer"
                   style={{ backgroundColor: 'var(--app-surface)', borderColor: 'var(--app-border)' }}
                 >
                   <span>Seasons{seasonAhead ? `: ${seasonAhead.title}` : ''}</span>
@@ -1423,14 +1423,14 @@ export default function App() {
             <main
               ref={dialogueAreaRef}
               className={`absolute inset-x-0 bottom-0 z-20 px-3 pt-2 pb-2 flex flex-col ${
-                customTurn?.chart ? 'max-h-[calc(100%-56px)]' : 'max-h-[calc(100%-248px)] short:max-h-[calc(100%-112px)]'
+                customTurn?.chart ? 'max-h-[calc(100%-56px)]' : 'max-h-[calc(100%-var(--room-h)*0.84)]'
               } ${dialogueScrolls ? 'overflow-y-auto' : 'overflow-hidden'}`}
             >
               <div ref={dialogueRef} className="min-h-0 flex flex-col gap-2 [&>*]:shrink-0 [&>section]:shrink">
               {levelUpToast && (
                 <div
                   data-testid="level-up-banner"
-                  className="px-3 py-1 text-xs font-semibold flex items-center justify-between gap-2 border-2"
+                  className="px-3 py-1 text-sm font-semibold flex items-center justify-between gap-2 border-2"
                   style={{
                     backgroundColor: 'var(--app-accent)',
                     color: 'var(--app-accent-fg)',
@@ -1454,7 +1454,7 @@ export default function App() {
                 <div className="space-y-2">
                   <div
                     data-testid="mentor-speech"
-                    className="pixel-card px-3 py-2 text-xs leading-snug font-medium flex items-start justify-between gap-2"
+                    className="pixel-card px-3 py-2 text-sm leading-snug font-medium flex items-start justify-between gap-2"
                   >
                     <span>
                       <strong className="font-num">Mikko:</strong> {activeSpeech}
@@ -1488,7 +1488,7 @@ export default function App() {
                   <div className="flex items-start justify-between gap-2">
                     <p
                       data-testid="mentor-speech"
-                      className="text-xs leading-relaxed font-medium min-w-0"
+                      className="text-sm leading-relaxed font-medium min-w-0"
                     >
                       <strong className="font-num">Mikko:</strong>{' '}
                       {asking ? 'Grabbing my notes… checking your numbers.' : activeSpeech}
@@ -1508,7 +1508,7 @@ export default function App() {
                     type="button"
                     data-testid="retry-turn"
                     onClick={customTurn.retry}
-                    className="w-full min-h-[44px] px-3 text-xs font-semibold pixel-btn cursor-pointer"
+                    className="w-full min-h-[44px] px-3 text-sm font-semibold pixel-btn cursor-pointer"
                     style={{ backgroundColor: 'var(--app-accent)', color: 'var(--app-accent-fg)' }}
                   >
                     Try again
@@ -1520,7 +1520,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={handleOpenOfferedChart}
-                      className="min-h-[44px] px-3 text-xs font-semibold pixel-btn cursor-pointer flex items-center justify-center gap-1"
+                      className="min-h-[44px] px-3 text-sm font-semibold pixel-btn cursor-pointer flex items-center justify-center gap-1"
                       style={{
                         backgroundColor: 'var(--app-accent)',
                         color: 'var(--app-accent-fg)',
@@ -1532,7 +1532,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => setCustomTurn(null)}
-                      className="min-h-[44px] px-3 text-xs font-semibold pixel-btn cursor-pointer"
+                      className="min-h-[44px] px-3 text-sm font-semibold pixel-btn cursor-pointer"
                       style={{
                         backgroundColor: 'var(--app-surface-muted)',
                         color: 'var(--app-text)',
@@ -1548,7 +1548,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={handleCompareYes}
-                      className="min-h-[44px] px-3 text-xs font-semibold pixel-btn cursor-pointer flex items-center justify-center gap-1"
+                      className="min-h-[44px] px-3 text-sm font-semibold pixel-btn cursor-pointer flex items-center justify-center gap-1"
                       style={{ backgroundColor: 'var(--app-accent)', color: 'var(--app-accent-fg)' }}
                     >
                       <span>Compare to Finland</span>
@@ -1559,7 +1559,7 @@ export default function App() {
                       onClick={() => {
                         setCustomTurn(null);
                       }}
-                      className="min-h-[44px] px-3 text-xs font-semibold pixel-btn cursor-pointer"
+                      className="min-h-[44px] px-3 text-sm font-semibold pixel-btn cursor-pointer"
                       style={{ backgroundColor: 'var(--app-surface-muted)', color: 'var(--app-text)' }}
                     >
                       {activeQuest ? 'Check Spend (+XP)' : 'Ask a Question'}
@@ -1571,7 +1571,7 @@ export default function App() {
                   <div data-testid="suspicion-quest" className="min-h-0 flex flex-col">
                     <div
                       ref={choicesRef}
-                      className={`min-h-0 overflow-y-auto overscroll-contain pr-1 pb-1 ${questCompact ? 'space-y-1' : 'space-y-2'}`}
+                      className={`min-h-0 overflow-y-auto overscroll-contain pr-1 ${questCompact ? 'space-y-1' : 'space-y-2 pb-1'}`}
                       data-testid="quest-choices"
                       data-compact={questCompact ? 'true' : 'false'}
                     >
@@ -1580,8 +1580,8 @@ export default function App() {
                           key={ch.id}
                           type="button"
                           onClick={() => handleAnswerQuest(ch.id)}
-                          className={`w-full px-3 text-left text-xs font-semibold pixel-btn flex items-center justify-between gap-2 cursor-pointer ${
-                            questCompact ? 'min-h-[30px] py-1' : 'min-h-[44px] py-2'
+                          className={`w-full px-3 text-left text-sm font-semibold pixel-btn flex items-center justify-between gap-2 cursor-pointer ${
+                            questCompact ? 'min-h-[30px] py-0.5' : 'min-h-[44px] py-2'
                           }`}
                           style={{
                             backgroundColor: 'var(--app-surface-muted)',
@@ -1639,7 +1639,7 @@ export default function App() {
                         onClick={() => handleChip(chip)}
                         disabled={asking}
                         data-suggested={suggested ? 'true' : undefined}
-                        className="min-h-[44px] px-3 py-2 text-left text-xs font-semibold pixel-btn cursor-pointer truncate"
+                        className="min-h-[44px] px-3 py-2 text-left text-sm font-semibold pixel-btn cursor-pointer truncate"
                         style={{
                           backgroundColor: suggested ? 'var(--app-surface)' : 'var(--app-surface-muted)',
                           borderColor: suggested ? 'var(--app-accent)' : undefined,
@@ -1692,7 +1692,7 @@ export default function App() {
               <button
                 type="submit"
                 disabled={asking}
-                className="min-h-[44px] px-4 text-xs font-semibold pixel-btn cursor-pointer whitespace-nowrap"
+                className="min-h-[44px] px-4 text-sm font-semibold pixel-btn cursor-pointer whitespace-nowrap"
                 style={{
                   backgroundColor: 'var(--app-accent)',
                   color: 'var(--app-accent-fg)',

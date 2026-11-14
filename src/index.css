@@ -25,6 +25,18 @@
     --pixel-shadow: 3px 3px 0px rgba(17, 34, 24, 0.16);
   }
 
+  /* Mikko's room grows with the screen: what is left after the bars and about 220px for his message,
+     from 220px on small phones up to 420px on big ones (iPhone 16 / Pro Max); short in landscape. */
+  :root {
+    --room-h: clamp(220px, calc(100dvh - 400px), 420px);
+  }
+
+  @media (max-height: 520px) {
+    :root {
+      --room-h: 140px;
+    }
+  }
+
   [data-theme="gameboy"] {
     --app-bg: #cadc9f;
     --app-surface: #e0f0b6;
