@@ -394,12 +394,38 @@ export default function App() {
         text:
           `You spend €${Math.abs(diff).toFixed(0)}/month ${diff > 0 ? 'more' : 'less'} than other Finns aged ${board.ageGroup}. ` +
           `Biggest gap: ${top.category} (+€${(top.yours - top.finland).toFixed(0)}). ` +
-          `You're under them in ${board.lessCount} categor${board.lessCount === 1 ? 'y' : 'ies'}, best in ${bottom.category}.`,
+          `You're under them in ${board.lessCount} categor${board.lessCount === 1 ? 'y' : 'ies'}, best in ${bottom.category}. Tap a category on the wall for details.`,
         chart: board,
       });
     } catch (error) {
       setCustomTurn({ mood: 'deadpan', text: error instanceof Error ? error.message : 'Could not load the comparison.' });
     }
+  };
+
+  // Tap a tile on the You vs Finland wall: Mikko explains that category.
+  const handlePickCategory = (category: string) => {
+    if (customTurn?.chart?.kind !== 'finland_board') return;
+    const board = customTurn.chart;
+    const row = board.rows.find((r) => r.category === category);
+    if (!row) return;
+    soundFx.playClick();
+    const pct = pctVsFinland(row);
+    const diff = row.yours - row.finland;
+    const sign = diff >= 0 ? '+' : '−';
+    const tip =
+      row.verdict === 'more'
+        ? category === 'Housing'
+          ? ' Note: the survey average includes owners, who pay no rent, so it runs low.'
+          : ' That is where the gap is.'
+        : row.verdict === 'less'
+          ? ' Nice, you are below average here.'
+          : ' Right on the Finnish average.';
+    setCustomTurn({
+      ...customTurn,
+      pick: category,
+      mood: row.verdict === 'more' ? 'suspicious' : row.verdict === 'less' ? 'impressed' : 'deadpan',
+      text: `${category}: you spend €${row.yours.toFixed(0)}/month, other Finns aged ${board.ageGroup} spend €${row.finland.toFixed(0)} (${sign}€${Math.abs(diff).toFixed(0)}, ${pct > 0 ? '+' : ''}${pct}%).${tip}`,
+    });
   };
 
   const handleShowMood = () => {
