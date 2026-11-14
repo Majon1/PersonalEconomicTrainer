@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Personal Economic Trainer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --green: #087a3c;
+    --green-dark: #0b4d27;
+    --ink: #17271b;
+    --muted: #4a5d4f;
+    --room: #dfe8df;
+    --paper: #f6f8f4;
+    --wood: #6f451f;
+    --line: #17271b;
+    --red: #c62828;
+    --amber: #e0a106;
+    --blue: #2563eb;
+    --purple: #7c3aed;
+    --orange: #c2410c;
+  }
+  @page { size: 1280px 720px; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #2b2b2b; }
+  body { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; color: var(--ink); }
+
+  .deck { display: flex; flex-direction: column; align-items: center; gap: 24px; padding: 24px 0; }
+  .slide {
+    width: 1280px; height: 720px; position: relative; overflow: hidden;
+    background: var(--room); padding: 64px 72px; display: flex; flex-direction: column;
+    transform-origin: top center;
+  }
+  @media print {
+    html, body { background: none; }
+    .deck { gap: 0; padding: 0; display: block; }
+    .slide { break-after: page; transform: none !important; margin: 0 !important; }
+  }
+
+  .pixel { font-family: 'Silkscreen', monospace; letter-spacing: 0.02em; }
+  .num { font-family: 'JetBrains Mono', monospace; }
+  .kicker { font-family: 'Silkscreen', monospace; font-size: 18px; color: var(--green); margin-bottom: 14px; }
+  h1 { font-family: 'Silkscreen', monospace; font-weight: 700; font-size: 64px; line-height: 1.05; }
+  h2 { font-size: 44px; font-weight: 800; line-height: 1.15; letter-spacing: -0.01em; max-width: 1000px; }
+  p.lead { font-size: 24px; line-height: 1.45; color: var(--muted); margin-top: 18px; max-width: 900px; }
+
+  .card {
+    background: var(--paper); border: 3px solid var(--line); box-shadow: 6px 6px 0 var(--line);
+    padding: 22px 24px;
+  }
+  .card h3 { font-size: 22px; font-weight: 800; margin-bottom: 8px; }
+  .card p { font-size: 18px; line-height: 1.45; color: var(--muted); }
+
+  .floor { position: absolute; left: 0; right: 0; bottom: 0; height: 40px; background: var(--wood); border-top: 6px solid #8a5a2b; }
+  .footer { position: absolute; left: 72px; right: 72px; bottom: 54px; display: flex; justify-content: space-between; font-size: 14px; color: var(--muted); }
+  .footer .pixel { font-size: 13px; }
+
+  .phone {
+    width: 270px; flex: none; border: 4px solid var(--line); box-shadow: 8px 8px 0 var(--line);
+    background: #111; padding: 6px; border-radius: 4px;
+  }
+  .phone img { display: block; width: 100%; image-rendering: auto; }
+
+  .row { display: flex; gap: 56px; align-items: center; flex: 1; min-height: 0; }
+  .col { flex: 1; min-width: 0; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 36px; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 40px; }
+  .grid3 + p.lead { margin-top: 40px; }
+
+  .bubble { display: inline-block; background: var(--paper); border: 3px solid var(--line); box-shadow: 4px 4px 0 var(--line); padding: 12px 18px; font-size: 20px; font-weight: 600; margin: 0 0 16px; }
+  .bubble.you { background: var(--green); color: #fff; }
+  .bubble b.pixel { font-weight: 400; }
+
+  .swatch { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--line); margin-right: 10px; vertical-align: -2px; }
+  .stat { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 56px; color: var(--green); line-height: 1; }
+  .stat-label { font-size: 18px; color: var(--muted); margin-top: 10px; line-height: 1.4; }
+
+  .flow { display: flex; align-items: stretch; gap: 0; margin-top: 44px; }
+  .flow .card { flex: 1; padding: 18px 18px; }
+  .flow .card h3 { font-size: 19px; }
+  .flow .card p { font-size: 16px; }
+  .arrow { width: 44px; flex: none; display: flex; align-items: center; justify-content: center; font-family: 'Silkscreen', monospace; font-size: 40px; font-weight: 700; }
+  .tag { display: inline-block; font-family: 'JetBrains Mono', monospace; font-size: 13px; background: var(--ink); color: #fff; padding: 3px 8px; margin-bottom: 10px; }
+
+  ul.ticks { list-style: none; margin-top: 28px; }
+  ul.ticks li { font-size: 22px; line-height: 1.4; padding-left: 36px; position: relative; margin-bottom: 16px; }
+  ul.ticks li::before { content: ''; position: absolute; left: 0; top: 8px; width: 16px; height: 16px; background: var(--green); border: 2px solid var(--line); }
+
+  .crit { display: grid; grid-template-columns: 300px 1fr; gap: 0; margin-top: 30px; border: 3px solid var(--line); box-shadow: 6px 6px 0 var(--line); background: var(--paper); }
+  .crit div { padding: 13px 20px; font-size: 18px; border-bottom: 2px solid #c9d3c9; line-height: 1.4; }
+  .crit div:nth-child(odd) { font-weight: 800; border-right: 2px solid #c9d3c9; }
+  .crit div:nth-last-child(-n+2) { border-bottom: none; }
+
+  .title-slide { background: var(--green-dark); color: #fff; }
+  .title-slide .kicker { color: #8fe3ad; }
+  .title-slide p.lead { color: #d3eadb; }
+  .url { font-family: 'JetBrains Mono', monospace; font-size: 22px; background: var(--paper); color: var(--ink); border: 3px solid var(--line); box-shadow: 5px 5px 0 #000; padding: 12px 18px; display: inline-block; }
+  .logo-kicker { display: flex; align-items: center; gap: 12px; }
+  .card.dark { background: var(--green-dark); color: #fff; }
+  .card.dark p { color: #d3eadb; margin-top: 12px; }
+  .card .logo { display: block; }
+  .logos { position: absolute; left: 72px; bottom: 30px; display: flex; align-items: center; gap: 16px; font-family: 'Silkscreen', monospace; font-size: 14px; color: #8fe3ad; }
+  .try { display: flex; align-items: center; gap: 28px; margin-top: 32px; }
+  .qr { width: 148px; height: 148px; flex: none; background: #fff; border: 3px solid var(--line); box-shadow: 5px 5px 0 #000; padding: 6px; }
+  .qr img { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+  .try .hint { font-family: 'Silkscreen', monospace; font-size: 14px; color: #8fe3ad; margin-top: 14px; }
+</style>
+</head>
+<body>
+<div class="deck">
+
+  <!-- 1. Title -->
+  <section class="slide title-slide">
+    <div class="row">
+      <div class="col">
+        <div class="kicker logo-kicker">Junction 2026 challenge by <img src="s_pankki.webp" alt="S-Pankki" style="height:34px" /></div>
+        <h1>Personal<br />Economic<br />Trainer</h1>
+        <p class="lead">A pixel art money coach where Mikko watches your S-mobiili spending, compares you to the average Finn, and turns better money habits into a game.</p>
+        <div class="try">
+          <div class="qr"><img src="qr-app.svg" alt="QR code to the app" /></div>
+          <div><div class="url">grossly-powerful-buck.eur-1.aiven.app</div><div class="hint">Scan to try it on your phone</div></div>
+        </div>
+      </div>
+      <div class="phone"><img src="shot-home.png" alt="Mikko's home screen" /></div>
+    </div>
+  </section>
+
+  <!-- 2. Problem -->
+  <section class="slide">
+    <div class="kicker">The problem</div>
+    <h2>Banking apps show statements. People need someone to explain them.</h2>
+    <div class="grid3">
+      <div class="card">
+        <div class="stat">3.5M</div>
+        <div class="stat-label">S-Bank customers</div>
+      </div>
+      <div class="card">
+        <div class="stat">1 in 3</div>
+        <div class="stat-label">Finnish adults open S-mobiili every week</div>
+      </div>
+      <div class="card">
+        <div class="stat">0</div>
+        <div class="stat-label">Finnish banks that let customers chat with their own financial data, to S-Bank's knowledge</div>
+      </div>
+    </div>
+    <p class="lead">S-Bank wants AI to improve financial literacy, especially among young adults. Mikko does that inside the app they already use.</p>
+    <div class="floor"></div>
+  </section>
+
+  <!-- 3. Meet Mikko -->
+  <section class="slide">
+    <div class="row">
+      <div class="col">
+        <div class="kicker">Meet Mikko</div>
+        <h2>Talk to your money in plain words</h2>
+        <div style="margin-top:32px">
+          <div class="bubble you">How much did I spend on taxis last month?</div><br />
+          <div class="bubble you">What is safe to spend this week?</div><br />
+          <div class="bubble you">Can I buy sneakers for €90?</div><br />
+          <div class="bubble"><b class="pixel">Mikko:</b> Your nice to have budget is blown. Hold off until next month.</div>
+        </div>
+        <p class="lead" style="font-size:20px">Ask anything, or tap a suggested question. Mikko's face shows how your month is going.</p>
+      </div>
+      <div class="phone"><img src="shot-home.png" alt="Mikko giving budget feedback" /></div>
+    </div>
+  </section>
+
+  <!-- 4. Baskets -->
+  <section class="slide">
+    <div class="row">
+      <div class="col">
+        <div class="kicker">Where the money goes</div>
+        <h2>Every month, sorted into four baskets</h2>
+        <div class="grid2" style="margin-top:30px">
+          <div class="card"><h3><span class="swatch" style="background:var(--green)"></span>Regular</h3><p>Rent, bills, groceries and commuting. You must pay these.</p></div>
+          <div class="card"><h3><span class="swatch" style="background:var(--blue)"></span>Irregular</h3><p>Health, home and tech. Must pay, but they come as surprises.</p></div>
+          <div class="card"><h3><span class="swatch" style="background:var(--orange)"></span>Slips</h3><p>Small habits up to €40, like coffees and taxis, that slip through your fingers.</p></div>
+          <div class="card"><h3><span class="swatch" style="background:var(--purple)"></span>Nice to have</h3><p>Travel, hobbies and dinners out. Extras you could live without.</p></div>
+        </div>
+      </div>
+      <div class="phone"><img src="shot-spending.png" alt="Spending page with baskets" /></div>
+    </div>
+  </section>
+
+  <!-- 5. You vs Finland -->
+  <section class="slide">
+    <div class="row">
+      <div class="col">
+        <div class="kicker">You vs Finland</div>
+        <h2>Is my spending normal?</h2>
+        <p class="lead">Mikko compares each category with other Finns your age, using the Statistics Finland household budget survey, adjusted to today's prices with the consumer price index.</p>
+        <ul class="ticks">
+          <li>The biggest gaps go up on Mikko's wall</li>
+          <li>Tap a category to see the details and the full table</li>
+          <li>Seasonal tips, like December spending running about 14% above an average month</li>
+        </ul>
+      </div>
+      <div class="phone"><img src="shot-finland.png" alt="You vs Finland wall" /></div>
+    </div>
+  </section>
+
+  <!-- 6. Quests -->
+  <section class="slide">
+    <div class="row">
+      <div class="col">
+        <div class="kicker">Learning by doing</div>
+        <h2>Mikko asks about unclear payments</h2>
+        <p class="lead">"€48.84 to Events, three charges in three months. What is it actually?" Naming it honestly sorts it into the right basket and earns XP.</p>
+        <ul class="ticks">
+          <li>Mikko remembers the answer and does not ask about that payment again</li>
+          <li>He flags repeating subscriptions, late night taxis and big purchases</li>
+        </ul>
+      </div>
+      <div class="phone"><img src="shot-quest.png" alt="Mikko asking about a payment" /></div>
+    </div>
+  </section>
+
+  <!-- 7. Planning -->
+  <section class="slide">
+    <div class="kicker">Planning</div>
+    <h2>Plan ahead with your own numbers</h2>
+    <div class="grid2">
+      <div class="card"><h3>What if?</h3><p>"What if I put €100 a month into an index fund?" Mikko replays it on real past prices: cash, S-savings account, a global index fund or a volatile Nokia replay.</p></div>
+      <div class="card"><h3>Safe to spend</h3><p>What is left this week after the rent and bills still due before payday.</p></div>
+      <div class="card"><h3>Budget</h3><p>Limits for slips and nice to haves, suggested from your last 3 months minus 10%, with a warning before a limit runs out.</p></div>
+      <div class="card"><h3>Rainy day fund</h3><p>Progress towards 3 months of costs in cash, for surprises like a broken washing machine.</p></div>
+    </div>
+    <div class="floor"></div>
+  </section>
+
+  <!-- 8. Game -->
+  <section class="slide">
+    <div class="kicker">The game</div>
+    <h2>Good money habits earn XP and coins</h2>
+    <div class="grid3">
+      <div class="card"><h3>XP and levels</h3><p>Answering Mikko's questions and checking your spending fills the XP bar.</p></div>
+      <div class="card"><h3>Locker</h3><p>Coins unlock Mikko outfits, app themes and S-Bank card skins.</p></div>
+      <div class="card"><h3>Money mood</h3><p>Mikko is impressed when you live within your means, suspicious when you could do better, and angry when a splurge eats the rent money.</p></div>
+    </div>
+    <p class="lead">Progress is saved to your account, so the same level follows you from phone to laptop.</p>
+    <div class="floor"></div>
+  </section>
+
+  <!-- 9. Architecture -->
+  <section class="slide">
+    <div class="kicker">How it works</div>
+    <h2>AI understands the question, our engine does the math</h2>
+    <div class="flow">
+      <div class="card"><span class="tag">React app</span><h3>Phone</h3><p>Mobile web app, ready to embed in S-mobiili</p></div>
+      <div class="arrow">›</div>
+      <div class="card"><span class="tag">gemini-decision-1</span><h3>Router</h3><p>Picks which lookup answers the question</p></div>
+      <div class="arrow">›</div>
+      <div class="card"><span class="tag">Engine</span><h3>Exact euros</h3><p>Baskets, budgets, safe to spend and what-if simulations</p></div>
+      <div class="arrow">›</div>
+      <div class="card"><span class="tag">gemini-3.5-flash-lite</span><h3>Mikko's reply</h3><p>One short answer in plain words</p></div>
+    </div>
+    <div class="grid2" style="margin-top:34px">
+      <div class="card dark"><img class="logo" src="aiven.webp" alt="Aiven" style="height:34px" /><p>The app runs as a container on Aiven in Frankfurt, with Aiven PostgreSQL holding transactions, Statistics Finland data, and Mikko's memory, budgets and XP.</p></div>
+      <div class="card dark"><img class="logo" src="google_deepmind.webp" alt="Google DeepMind" style="height:24px;margin:5px 0" /><p>Gemini API. Unclear questions escalate to gemini-4-hydrogen with a full tool calling loop. Topic buttons are answered by the engine without calling a model.</p></div>
+    </div>
+  </section>
+
+  <!-- 10. Trust -->
+  <section class="slide">
+    <div class="kicker">Trust</div>
+    <h2>Correct numbers, private data</h2>
+    <ul class="ticks" style="margin-top:40px">
+      <li>Every number comes from the engine and the database, and the model only puts those numbers into words.</li>
+      <li>Gemini gets totals, not the full transaction list.</li>
+      <li>Chat runs with <span class="num">store: false</span>, so Google does not keep the conversation.</li>
+      <li>Hosted in the EU, in Frankfurt, with verified TLS to the database.</li>
+      <li>Users explore their own data freely instead of fixed charts, in the spirit of MyData.</li>
+    </ul>
+    <div class="floor"></div>
+  </section>
+
+  <!-- 11. Fit -->
+  <section class="slide">
+    <div class="kicker">Why it fits S-Bank</div>
+    <h2>S-Bank's judging criteria</h2>
+    <div class="crit">
+      <div>Financial literacy</div><div>Four baskets, quests and plain explanations teach where money goes</div>
+      <div>Original AI</div><div>A decision model routes questions, and the engine keeps the numbers exact</div>
+      <div>Mobile experience</div><div>One screen, no scrolling, 44px buttons, from small Androids to the iPhone 16 Pro Max</div>
+      <div>Feasibility</div><div>Running on Aiven now, on a synthetic dataset modelled on S-Bank data</div>
+      <div>S-mobiili integration</div><div>A web app that can be embedded in S-mobiili, with S-Bank card skins in the Locker</div>
+    </div>
+  </section>
+
+  <!-- 12. Try it -->
+  <section class="slide title-slide">
+    <div class="row">
+      <div class="col">
+        <div class="kicker">Try it now</div>
+        <h1>Say hi<br />to Mikko</h1>
+        <p class="lead">Open it on your phone, pick a test profile in Overview, and answer Mikko's first question.</p>
+        <div class="try">
+          <div class="qr"><img src="qr-app.svg" alt="QR code to the app" /></div>
+          <div><div class="url">grossly-powerful-buck.eur-1.aiven.app</div><div class="hint">Scan to try it on your phone</div></div>
+        </div>
+        <p class="lead" style="font-size:18px;margin-top:28px">Source: github.com/Majon1/PersonalEconomicTrainer</p>
+      </div>
+      <div class="phone"><img src="shot-quest.png" alt="Mikko asking a question" /></div>
+    </div>
+    <div class="logos">
+      <span>Built for</span><img src="s_pankki.webp" alt="S-Pankki" style="height:24px" />
+      <span>with</span><img src="aiven.webp" alt="Aiven" style="height:26px" /><span>and</span><img src="google_deepmind.webp" alt="Google DeepMind" style="height:18px" />
+    </div>
+  </section>
+
+</div>
+<script>
+  function fit() {
+    const s = Math.min(1, (window.innerWidth - 32) / 1280);
+    document.querySelectorAll('.slide').forEach((el) => {
+      el.style.transform = s < 1 ? `scale(${s})` : '';
+      el.style.marginBottom = s < 1 ? `${-720 * (1 - s)}px` : '';
+    });
+  }
+  if (!matchMedia('print').matches) { addEventListener('resize', fit); fit(); }
+</script>
+</body>
+</html>
