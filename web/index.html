@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>My Money Status</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">€</span>
+        <span>Personal Economic Trainer</span>
+      </div>
+      <div class="who" id="who"></div>
+    </div>
+  </header>
+
+  <div class="layout">
+    <main class="dash" id="dash">
+      <section class="intro" id="sec-status">
+        <div>
+          <h1>Your financial status</h1>
+          <p class="muted" id="asOf"></p>
+        </div>
+        <label class="month-picker">
+          <span>Month</span>
+          <select id="monthSelect"></select>
+        </label>
+      </section>
+
+      <div class="notice" id="notice" hidden></div>
+
+      <!-- Headline numbers -->
+      <section class="status-grid">
+        <div class="card hero">
+          <div class="label">Balance on your account</div>
+          <div class="hero-value" id="heroBalance"></div>
+          <div class="muted small" id="heroSub"></div>
+        </div>
+        <div class="tiles" id="tiles"></div>
+      </section>
+
+      <!-- The three baskets -->
+      <section class="card" id="sec-baskets">
+        <div class="card-head">
+          <div>
+            <h2>Where your money goes: four baskets</h2>
+            <p class="muted">Two baskets you must pay, two you choose. Knowing which basket is growing tells you where to act. <a href="#sec-mydata">Change which basket things go in</a>.</p>
+          </div>
+        </div>
+        <div class="segbar" id="segbar" role="img"></div>
+        <div class="legend" id="segLegend"></div>
+        <div class="baskets" id="baskets"></div>
+      </section>
+
+      <!-- Where it really goes -->
+      <section class="card" id="sec-habits">
+        <div class="card-head wrap-row">
+          <div>
+            <h2>Where it really goes</h2>
+            <p class="muted" id="habitSub"></p>
+          </div>
+          <div class="chips" id="habitTabs" role="group" aria-label="Which basket to analyse"></div>
+        </div>
+        <div class="habit-summary" id="habitSummary"></div>
+        <div class="table-scroll"><table class="data habits" id="habitTable"></table></div>
+      </section>
+
+      <!-- Month by month -->
+      <section class="card" id="sec-monthly">
+        <div class="card-head">
+          <div>
+            <h2>Month by month</h2>
+            <p class="muted">Spending per basket against your income. Click a month to explore it.</p>
+          </div>
+        </div>
+        <div class="legend" id="monthlyLegend"></div>
+        <div class="chart" id="monthlyChart"></div>
+        <details class="table-toggle">
+          <summary>Show as table</summary>
+          <div class="table-scroll"><table class="data" id="monthlyTable"></table></div>
+        </details>
+      </section>
+
+      <div class="two-col">
+        <section class="card" id="sec-categories">
+          <div class="card-head">
+            <div>
+              <h2>Spending by category</h2>
+              <p class="muted" id="catSub"></p>
+            </div>
+          </div>
+          <div class="cat-list" id="catList"></div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <div>
+              <h2>Account balance</h2>
+              <p class="muted">Balance after every transaction, last 24 months.</p>
+            </div>
+          </div>
+          <div class="chart" id="balanceChart"></div>
+        </section>
+      </div>
+
+      <!-- Benchmarks -->
+      <section class="card" id="sec-finland">
+        <div class="card-head">
+          <div>
+            <h2>You vs. other Finns your age</h2>
+            <p class="muted" id="fiSub"></p>
+          </div>
+        </div>
+        <div class="legend" id="fiLegend"></div>
+        <div class="cat-list" id="fiList"></div>
+        <p class="muted small" id="fiSource"></p>
+      </section>
+
+      <!-- Mortgage -->
+      <section class="card" id="mortgageCard" hidden></section>
+
+      <!-- Transactions -->
+      <section class="card" id="sec-transactions">
+        <div class="card-head wrap-row">
+          <div>
+            <h2>Transactions</h2>
+            <p class="muted" id="txSub"></p>
+          </div>
+          <div class="chips" id="txFilters" role="group" aria-label="Filter transactions by basket"></div>
+        </div>
+        <div class="table-scroll">
+          <table class="data tx" id="txTable"></table>
+        </div>
+      </section>
+
+      <!-- MyData -->
+      <section class="card" id="sec-mydata">
+        <div class="card-head">
+          <div>
+            <h2>My data</h2>
+            <p class="muted">This is your data. See what it contains, decide how it's grouped, and take a copy with you.</p>
+          </div>
+        </div>
+        <div class="mydata-grid">
+          <div>
+            <h3>What's in it</h3>
+            <ul class="facts" id="facts"></ul>
+            <h3 style="margin-top:16px">Take it with you</h3>
+            <div class="chips" style="margin-top:8px">
+              <button class="chip" id="dlJson">Download JSON</button>
+              <button class="chip" id="dlCsv">Download CSV</button>
+            </div>
+            <h3 style="margin-top:16px">When you use the chat</h3>
+            <p class="muted small">Your question goes to Google Gemini together with the summaries it asks for (totals, averages, a few example transactions). Your full transaction list stays on this computer.</p>
+          </div>
+          <div>
+            <div class="card-head" style="margin-bottom:8px">
+              <div>
+                <h3>Your baskets, your rules</h3>
+                <p class="muted small">Disagree with where something goes? Move it. The dashboard and the chat both follow your choice.</p>
+              </div>
+              <button class="chip" id="resetBaskets">Reset</button>
+            </div>
+            <div class="table-scroll"><table class="data rules" id="rules"></table></div>
+          </div>
+        </div>
+      </section>
+
+      <footer class="muted small foot">
+        Synthetic data modelled on real S-Bank transactions. Benchmarks: Statistics Finland open data (CC BY 4.0).
+      </footer>
+    </main>
+
+    <aside class="chat" id="chat" aria-label="Chat with your money">
+      <div class="chat-head">
+        <div>
+          <h2>Ask about your money</h2>
+          <p class="muted small" id="aiStatus">Connecting…</p>
+        </div>
+        <button class="icon-btn chat-close" id="chatClose" aria-label="Close chat">✕</button>
+      </div>
+      <div class="chat-log" id="chatLog" aria-live="polite"></div>
+      <div class="suggestions" id="suggestions"></div>
+      <form class="chat-form" id="chatForm">
+        <textarea id="chatInput" rows="1" placeholder="e.g. How much did I spend on taxis last month?" aria-label="Your question"></textarea>
+        <button type="submit" class="send" id="chatSend" aria-label="Send">➤</button>
+      </form>
+    </aside>
+  </div>
+
+  <button class="chat-fab" id="chatOpen">💬 Ask about your money</button>
+  <div class="tooltip" id="tooltip" role="status" hidden></div>
+
+  <script type="module" src="chat.js"></script>
+</body>
+</html>

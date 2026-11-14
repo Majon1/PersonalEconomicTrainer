@@ -1,0 +1,176 @@
+// Extract one customer from the raw CSVs and write web/data/customer.json.
+//
+// Every spending transaction is sorted into one of four "baskets" (see the
+// rules below). Non-spending rows are tagged as income, saving (money moved to
+// investments) or transfer.
+//
+// Usage:  node scripts/build-customer.mjs [CUSTOMER_ID]
+
+import { createReadStream, readFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+import { dirname, join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+const DATA = join(ROOT, "data");
+const OUT = join(ROOT, "web", "data", "customer.json");
+const DEFAULT_CUSTOMER = "CUST01957";
+
+// Merchant category codes (MCC) -> human-readable merchant type.
+const MCC_NAMES = {
+  5411: "Supermarket", 5422: "Butcher / fish shop", 5451: "Dairy / bakery",
+  5499: "Kiosk / convenience store",
+  5812: "Restaurant", 5813: "Bar / pub", 5814: "Café / fast food",
+  4111: "Public transport", 4121: "Taxi", 5541: "Fuel station",
+  5542: "Fuel (automated)", 7523: "Parking",
+  5912: "Pharmacy", 8011: "Doctor", 8021: "Dentist", 8099: "Health services",
+  5200: "Home supplies", 5251: "Hardware store", 5712: "Furniture",
+  5732: "Electronics", 5734: "Software",
+  5651: "Clothing", 5691: "Clothing", 5941: "Sports goods", 5942: "Books",
+  5945: "Toys & games", 5999: "Specialty shop",
+  7832: "Cinema", 7922: "Theatre & events", 7991: "Attractions",
+  7996: "Amusement park", 7999: "Recreation",
+  4511: "Flights", 4722: "Travel agency", 7011: "Hotel", 7512: "Car rental",
+};
+
+// Four baskets:
+//   regular   - mandatory and regular (rent, bills, groceries, commuting)
+//   irregular - mandatory but irregular (health, repairs, appliances)
+//   everyday  - small habitual purchases that slip through your fingers
+//               (coffees, quick lunches, snacks, taxis, parking)
+//   extras    - bigger nice-to-haves you could live without if money got
+//               tight (travel, hobbies, entertainment, shopping, big meals out)
+export const SMALL_PURCHASE_EUR = 40;
+
+const CATEGORY_BASKET = {
+  "Housing": "regular",
+  "Utilities": "regular",
+  "Groceries": "regular",
+  "Transportation": "regular",
+  "Health": "irregular",
+  "Home & Tech": "irregular",
+  "Restaurants": "everyday",
+  "Entertainment": "extras",
+  "Lifestyle": "extras",
+  "Travel": "extras",
+};
+// Merchant types decided by purchase size: small = slips through your fingers.
+const SIZE_RULES = {
+  // mcc: [basket if small, basket if big]
+  5812: ["everyday", "extras"],  // restaurant: quick lunch vs. a dinner out
+  5813: ["everyday", "extras"],  // bar / pub
+  5814: ["everyday", "extras"],  // café / fast food
+  4121: ["everyday", "extras"],  // taxi
+  5499: ["everyday", "regular"], // kiosk snack vs. a grocery run
+};
+const MCC_BASKET = {
+  7523: "everyday", // parking
+};
+const NON_SPENDING = {
+  salary: "income",
+  other_income: "income",
+  investment_withdrawal: "income",
+  investment_deposit: "saving",
+  salary_sweep: "transfer",
+};
+
+export function basketFor(row) {
+  const fixed = NON_SPENDING[row.transaction_type] ?? MCC_BASKET[row.mcc_code];
+  if (fixed) return fixed;
+  const size = SIZE_RULES[row.mcc_code];
+  if (size) return Math.abs(Number(row.tx_amount_eur)) <= SMALL_PURCHASE_EUR ? size[0] : size[1];
+  return CATEGORY_BASKET[row.category] ?? "extras";
+}
+
+// Minimal CSV line parser (handles quoted fields with commas and "" escapes).
+function parseLine(line) {
+  const out = [];
+  let cur = "", quoted = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (quoted) {
+      if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+      else if (ch === '"') quoted = false;
+      else cur += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === ",") { out.push(cur); cur = ""; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+
+const stripBom = (s) => s.replace(/^﻿/, "");
+
+function readSmallCsv(name) {
+  const lines = stripBom(readFileSync(join(DATA, name), "utf8")).split(/\r?\n/).filter(Boolean);
+  const header = parseLine(lines[0]);
+  return lines.slice(1).map((l) => Object.fromEntries(parseLine(l).map((v, i) => [header[i], v])));
+}
+
+async function readCustomerTransactions(customerId) {
+  const rl = createInterface({ input: createReadStream(join(DATA, "tx_junction_transactions.csv"), "utf8") });
+  const prefix = customerId + ",";
+  let header = null, seen = false;
+  const rows = [];
+  for await (const raw of rl) {
+    if (!header) { header = parseLine(stripBom(raw)); continue; }
+    if (!raw.startsWith(prefix)) {
+      if (seen) break; // the file is sorted by customer, so we're done
+      continue;
+    }
+    seen = true;
+    rows.push(Object.fromEntries(parseLine(raw).map((v, i) => [header[i], v])));
+  }
+  rl.close();
+  return rows;
+}
+
+async function main(customerId) {
+  const profile = readSmallCsv("tx_customers_junction.csv").find((r) => r.customer_id === customerId);
+  if (!profile) {
+    console.error(`Customer ${customerId} not found`);
+    process.exit(1);
+  }
+  const m = readSmallCsv("mtg_tx_customer_link_and_final_mtg_infio.csv").find((r) => r.customer_id === customerId);
+  const rows = await readCustomerTransactions(customerId);
+
+  const transactions = rows.map((r) => ({
+    date: r.tx_date,
+    time: r.tx_timestamp.slice(r.tx_timestamp.indexOf(":") + 1),
+    category: r.category,
+    amount: Number(r.tx_amount_eur),
+    balance: Number(r.balance_after_eur),
+    type: r.transaction_type,
+    merchant: r.merchant_id,
+    merchantType: MCC_NAMES[r.mcc_code] ?? "",
+    basket: basketFor(r),
+  }));
+
+  const out = {
+    customer: {
+      id: customerId,
+      age: Number(profile.customer_age),
+      postalCode: profile.customer_postal_code,
+      accountId: rows[0]?.bank_account_id ?? null,
+    },
+    mortgage: m ? {
+      id: m.mortgage_customer_id,
+      decision: m.final_decision,
+      rejectionReason: m.rejection_reason || null,
+      propertyPrice: Number(m.final_property_price_eur),
+      loan: Number(m.final_requested_loan_eur),
+      equity: Number(m.final_equity_amount_eur),
+      collateralValue: Number(m.final_collateral_value_eur),
+      requiredMonthlyIncome: Math.round(Number(m.required_monthly_income_eur) * 100) / 100,
+      loanToValue: Math.round(Number(m.lfinal_loan_to_value) * 10000) / 10000,
+    } : null,
+    transactions,
+  };
+
+  mkdirSync(dirname(OUT), { recursive: true });
+  writeFileSync(OUT, JSON.stringify(out) + "\n", "utf8");
+  console.log(`Wrote ${transactions.length} transactions for ${customerId} to ${relative(ROOT, OUT)}`);
+}
+
+main(process.argv[2] ?? DEFAULT_CUSTOMER);

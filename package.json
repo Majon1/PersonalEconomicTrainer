@@ -1,0 +1,13 @@
+{
+  "name": "personal-economic-trainer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Chat with your own money: a personal finance trainer on synthetic S-Bank-style data.",
+  "engines": { "node": ">=20.12" },
+  "scripts": {
+    "start": "node server/server.mjs",
+    "build:customer": "node scripts/build-customer.mjs",
+    "fetch:benchmarks": "node scripts/fetch-benchmarks.mjs"
+  }
+}
